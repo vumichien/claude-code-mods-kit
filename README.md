@@ -108,7 +108,7 @@ Mods are not sandboxed. A mod's hooks run with your permissions and can read fil
 ## How it was tested
 
 - Each mod passes `claude plugin validate` and `claude plugin test` (`plugins/<name>/tests/`) and type-checks with `tsc`.
-- In a throwaway folder holding a `.env` of fake canary values, a demo plan with two phase files, and a small Python file, real Claude Code sessions (2.1.291, haiku) ran with the three mods, once loaded by `--plugin-dir` and once installed from a local copy of this marketplace:
+- In a throwaway folder holding a `.env` of fake canary values, a demo plan with two phase files, and a small Python file, real Claude Code sessions (2.1.291, haiku) ran with the three mods, once loaded by `--plugin-dir` and once installed from this repository with `claude plugin marketplace add vumichien/claude-code-mods-kit`:
   - asked to run `cat .env`, Claude received two `‹hidden: …›` markers and no canary value;
   - asked to add a task, change the Python file, tick the plan's step and mark the task done without running anything, Claude received the done-gate note and quoted it back;
   - `/plan` answered `phases 0/2 · steps 1/4 (25%)` before that session and `steps 2/4 (50%)` after it, with no model turn.
