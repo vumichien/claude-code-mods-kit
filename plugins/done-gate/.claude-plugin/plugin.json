@@ -1,0 +1,25 @@
+{
+  "name": "done-gate",
+  "version": "0.1.0",
+  "description": "Notices when Claude marks a task done while code it changed has not been tested since, and tells Claude and you; a band shows the last test run. It warns, it never blocks",
+  "author": {
+    "name": "Chien Vu Minh"
+  },
+  "license": "MIT",
+  "homepage": "https://github.com/vumichien/claude-code-mods-kit",
+  "types": "./types/index.d.ts",
+  "userConfig": {
+    "testCommands": {
+      "type": "string",
+      "title": "Your test commands",
+      "description": "Comma-separated commands that run your tests, added to the usual runners (pytest, npm test, go test, cargo test and others). Example: ./scripts/check.sh, make ci",
+      "default": ""
+    },
+    "ignore": {
+      "type": "string",
+      "title": "Not code",
+      "description": "Comma-separated file endings whose changes need no test run.",
+      "default": ".md,.mdx,.markdown,.txt,.rst,.adoc,.org"
+    }
+  }
+}

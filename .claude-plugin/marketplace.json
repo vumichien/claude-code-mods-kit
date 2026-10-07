@@ -4,7 +4,7 @@
     "name": "Chien Vu Minh"
   },
   "metadata": {
-    "description": "Three small Claude Code mods: hide .env values from tool results, watch a remote box's memory, and measure a Markdown draft."
+    "description": "Three small Claude Code mods: hide .env values from tool results, see how far your plan is, and get warned when a task is marked done with untested code."
   },
   "plugins": [
     {
@@ -16,17 +16,17 @@
       "category": "productivity"
     },
     {
-      "name": "spark-band",
-      "source": "./plugins/spark-band",
-      "description": "A band above the prompt with a remote Linux box's free memory, GPU processes and load, read over ssh",
+      "name": "plan-meter",
+      "source": "./plugins/plan-meter",
+      "description": "A band above the prompt with how far your plan file is (phases and steps done, what is in progress, what is next) and Claude's own task list",
       "version": "0.1.0",
       "license": "MIT",
       "category": "productivity"
     },
     {
-      "name": "article-meter",
-      "source": "./plugins/article-meter",
-      "description": "A pane with your Markdown draft's words per numbered part, one part's share and the placeholders left, kept current as Claude edits it",
+      "name": "done-gate",
+      "source": "./plugins/done-gate",
+      "description": "Warns Claude and you when a task is marked done while code it changed has not been tested since; a band shows the last test run. It never blocks",
       "version": "0.1.0",
       "license": "MIT",
       "category": "productivity"

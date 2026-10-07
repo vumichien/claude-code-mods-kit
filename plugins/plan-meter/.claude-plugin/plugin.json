@@ -1,0 +1,25 @@
+{
+  "name": "plan-meter",
+  "version": "0.1.0",
+  "description": "A band above the prompt with how far your plan file is (phases and steps done, what is in progress, what is next) and Claude's own task list, kept current as files change",
+  "author": {
+    "name": "Chien Vu Minh"
+  },
+  "license": "MIT",
+  "homepage": "https://github.com/vumichien/claude-code-mods-kit",
+  "types": "./types/index.d.ts",
+  "userConfig": {
+    "plan": {
+      "type": "string",
+      "title": "Plan files",
+      "description": "Comma-separated paths, relative to the project, tried in order. A * in any part matches anything; the newest match wins.",
+      "default": "plans/*/plan.md,PLAN.md,plan.md,TODO.md,TASKS.md,ROADMAP.md,todo.txt,TODO.org"
+    },
+    "refreshSeconds": {
+      "type": "number",
+      "title": "Re-read every (seconds)",
+      "description": "How often the plan is read again, to catch edits made outside Claude Code. At least 5.",
+      "default": 15
+    }
+  }
+}
