@@ -1,0 +1,35 @@
+{
+  "name": "chien-mods",
+  "owner": {
+    "name": "Chien Vu Minh"
+  },
+  "metadata": {
+    "description": "Three small Claude Code mods: hide .env values from tool results, watch a remote box's memory, and measure a Markdown draft."
+  },
+  "plugins": [
+    {
+      "name": "secret-guard",
+      "source": "./plugins/secret-guard",
+      "description": "Hides your project's .env values from tool results before Claude reads them",
+      "version": "0.1.0",
+      "license": "MIT",
+      "category": "productivity"
+    },
+    {
+      "name": "spark-band",
+      "source": "./plugins/spark-band",
+      "description": "A band above the prompt with a remote Linux box's free memory, GPU processes and load, read over ssh",
+      "version": "0.1.0",
+      "license": "MIT",
+      "category": "productivity"
+    },
+    {
+      "name": "article-meter",
+      "source": "./plugins/article-meter",
+      "description": "A pane with your Markdown draft's words per numbered part, one part's share and the placeholders left, kept current as Claude edits it",
+      "version": "0.1.0",
+      "license": "MIT",
+      "category": "productivity"
+    }
+  ]
+}

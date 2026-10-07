@@ -1,0 +1,37 @@
+{
+  "name": "article-meter",
+  "version": "0.1.0",
+  "description": "A pane with your Markdown draft's words per numbered part, one part's share and the placeholders left, kept current as Claude edits it",
+  "author": {
+    "name": "Chien Vu Minh"
+  },
+  "license": "MIT",
+  "homepage": "https://github.com/vumichien/claude-code-mods-kit",
+  "types": "./types/index.d.ts",
+  "userConfig": {
+    "draft": {
+      "type": "string",
+      "title": "Draft",
+      "description": "The draft's path, relative to the project. A * in the file name picks the newest match.",
+      "default": "docs/*-draft.md"
+    },
+    "markers": {
+      "type": "string",
+      "title": "Work-left markers",
+      "description": "Comma-separated texts counted as work left (outside HTML comments).",
+      "default": "⟨,TODO"
+    },
+    "focusPart": {
+      "type": "number",
+      "title": "Focus part",
+      "description": "The numbered part (## N.) whose share of the words is drawn as a bar. 0 hides it.",
+      "default": 3
+    },
+    "focusShare": {
+      "type": "number",
+      "title": "Focus share (%)",
+      "description": "The share the focus part should reach; the bar's line.",
+      "default": 50
+    }
+  }
+}

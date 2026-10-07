@@ -1,0 +1,28 @@
+{
+  "name": "secret-guard",
+  "version": "0.1.0",
+  "description": "Hides your project's .env values from tool results before Claude reads them",
+  "author": {
+    "name": "Chien Vu Minh"
+  },
+  "userConfig": {
+    "mode": {
+      "type": "string",
+      "title": "Mode",
+      "description": "value: hide .env values found in tool results. command: refuse any call whose input names a .env file.",
+      "default": "value",
+      "options": [
+        "value",
+        "command"
+      ]
+    },
+    "identifierKeys": {
+      "type": "string",
+      "title": "Identifier keys",
+      "description": "Comma-separated .env keys that hold names, not secrets (a login name that appears in ordinary paths); never hidden.",
+      "default": ""
+    }
+  },
+  "license": "MIT",
+  "homepage": "https://github.com/vumichien/claude-code-mods-kit"
+}

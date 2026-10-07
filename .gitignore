@@ -1,0 +1,7 @@
+# Written by Claude Code when a mod loads; describes the local build only.
+plugins/*/.claude-plugin/types/
+tsconfig.json
+# Never commit secrets.
+.env
+.env.*
+!.env.example
