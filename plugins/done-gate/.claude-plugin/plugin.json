@@ -1,6 +1,6 @@
 {
   "name": "done-gate",
-  "version": "0.1.0",
+  "version": "0.2.0",
   "description": "Notices when Claude marks a task done while code it changed has not been tested since, and tells Claude and you; a band shows the last test run. It warns, it never blocks",
   "author": {
     "name": "Chien Vu Minh"
@@ -20,6 +20,16 @@
       "title": "Not code",
       "description": "Comma-separated file endings whose changes need no test run.",
       "default": ".md,.mdx,.markdown,.txt,.rst,.adoc,.org"
+    },
+    "band": {
+      "type": "string",
+      "title": "Band above the prompt",
+      "description": "off: the band stays hidden until you type /done-gate on, and /done-gate off hides it again. on: the band shows from the start. Either way the mod keeps working; this changes only what is drawn.",
+      "default": "off",
+      "options": [
+        "off",
+        "on"
+      ]
     }
   }
 }

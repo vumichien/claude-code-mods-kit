@@ -255,7 +255,7 @@ export function summarize(file: string, plan: Parsed, all: readonly { link: stri
   }
 }
 
-// One line for the band and for /plan under `claude -p`.
+// One line for the band and for /plan-meter under `claude -p`.
 export function line(m: PlanMeter): string {
   if (m.error !== null) return `plan ▸ ${m.error}`
   const pieces = [`plan ▸ ${m.title ?? m.file}`]

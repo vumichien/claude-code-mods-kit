@@ -40,7 +40,8 @@ const world = (): World => ({
 })
 
 // Every stub sits beneath the plugin and is registered before the first $ call.
-async function start($: any, on: any, w: World) {
+// show: switch the band on with /plan-meter on, as a person would; false leaves it as the session starts it.
+async function start($: any, on: any, w: World, show = true) {
   const clock = mock.clock(on, { now: 1_000_000 })
   const norm = (p: string) => p.replace(/\\/g, '/')
   on('session.root', () => ({ value: ROOT }))
@@ -72,6 +73,7 @@ async function start($: any, on: any, w: World) {
   on('ui.render', ($: any, e: any) => h($.ui.resolve(e).Box, { key: 'engine-band' }))
   await $.session.start({ cwd: ROOT, surface: 'terminal', isInteractive: true })
   await clock.settle()
+  if (show) await runCommand($, 'plan-meter', 'on')
   return clock
 }
 
@@ -222,10 +224,10 @@ describe('plan-meter', () => {
     expect(await bandText($)).toBe('plan ▸ Ship the export feature · phases 1/3 · steps 3/6 (50%) · now: API')
   })
 
-  test('/plan replies with the same line, and /plan <path> switches file', async ($, on) => {
+  test('/plan-meter replies with the same line, and /plan-meter <path> switches file', async ($, on) => {
     await start($, on, world())
-    expect((await runCommand($, 'plan')).text).toContain('phases 1/3')
-    expect((await runCommand($, 'plan', 'TODO.md')).text).toBe('plan ▸ Todo · steps 1/2 (50%) · next: b')
+    expect((await runCommand($, 'plan-meter')).text).toContain('phases 1/3')
+    expect((await runCommand($, 'plan-meter', 'TODO.md')).text).toBe('plan ▸ Todo · steps 1/2 (50%) · next: b')
     expect(await bandText($)).toBe('plan ▸ Todo · steps 1/2 (50%) · next: b')
   })
 
@@ -262,17 +264,36 @@ describe('plan-meter', () => {
     expect(await bandText($)).toContain("· Claude's tasks 1/2")
   })
 
+  test('the band is hidden until /plan-meter on, and /plan-meter off hides it again; /plan-meter still answers', async ($, on) => {
+    const w = world()
+    await start($, on, w, false)
+    expect(await bandText($)).toBeUndefined()
+    expect((await runCommand($, 'plan-meter')).text).toContain('phases 1/3')
+    // The plan is still read while hidden, so the band is current when it comes back.
+    w.files[`${ROOT}/plans/260101-export/phase-02-api.md`] = PHASE_2.replace('[/]', '[x]').replace('[ ]', '[x]')
+    await $.tool.call({ tool: 'Edit', file_path: `${ROOT}/plans/260101-export/phase-02-api.md`, old_string: '[ ]', new_string: '[x]' })
+    expect((await runCommand($, 'plan-meter', 'on')).text).toBe('band on (/plan-meter off hides it)')
+    expect(await bandText($)).toContain('steps 5/6')
+    await runCommand($, 'plan-meter', 'off')
+    expect(await bandText($)).toBeUndefined()
+  })
+
+  test('the band option shows it from the start', { options: { band: 'on' } }, async ($, on) => {
+    await start($, on, world(), false)
+    expect(await bandText($)).toContain('phases 1/3')
+  })
+
   test('no plan and no task list: no band at all', async ($, on) => {
     await start($, on, { files: {}, mtimes: {} })
     expect(await bandText($)).toBeUndefined()
-    expect((await runCommand($, 'plan')).text).toContain('no plan found')
+    expect((await runCommand($, 'plan-meter')).text).toContain('no plan found')
   })
 
   for (const surface of ['terminal', 'desktop'] as const) {
     test(`the pane draws on ${surface}`, async ($, on) => {
       await start($, on, world())
       await $.tool.call({ tool: 'TodoWrite', todos: [{ content: 'wire the button', status: 'in_progress', activeForm: 'Wiring' }] })
-      await runCommand($, 'plan')
+      await runCommand($, 'plan-meter')
       const ui = await $.ui.mount({
         plugin: 'plan-meter',
         surface,

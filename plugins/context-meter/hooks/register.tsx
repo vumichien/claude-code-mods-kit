@@ -9,6 +9,15 @@ const cache = atom({ plugin: 'context-meter', key: 'cache' } as const, { lastAt:
 const now = atom({ plugin: 'context-meter', key: 'now' } as const, 0)
 const onSubscription = atom({ plugin: 'context-meter', key: 'onSubscription' } as const, false)
 const notice = atom({ plugin: 'context-meter', key: 'notice' } as const, null)
+// The band shows only when asked: `/context-meter` flips it, `/context-meter on` or `off` sets it, for this session;
+// until then the `band` option decides. Hiding it changes the drawing only: the window is still measured and the
+// cache clock still runs, so the band is current the moment it comes back.
+const shown = atom({ plugin: 'context-meter', key: 'shown' } as const, null)
+const SWITCH: Record<string, boolean> = { on: true, off: false }
+
+async function isShown($: any, band: unknown): Promise<boolean> {
+  return (await read($, shown)) ?? band === 'on'
+}
 
 type Detail = 'summary' | 'full'
 
@@ -99,10 +108,22 @@ export const register: Register = (on, options) => {
 
   on('session.start', async ($, e, next) => {
     const started = await next(e)
+    // `immediate`: a switch for the band works while Claude is still working.
+    await $.command
+      .register({ name: 'context-meter', description: 'Show or hide the context and cache band', argumentHint: '[on|off]', immediate: true })
+      .catch(() => undefined)
     await measure($, detail).catch(() => undefined)
     ticking?.cancel()
     ticking = $.clock.every(1000, () => void tick($, options.cacheTtl).catch(() => undefined))
     return started
+  })
+
+  on('command.run', { command: 'context-meter' }, async ($, e) => {
+    const word = e.args.trim().toLowerCase()
+    const show = SWITCH[word] ?? (word === '' ? !(await isShown($, options.band)) : undefined)
+    if (show === undefined) return { text: 'use /context-meter, /context-meter on or /context-meter off' }
+    await update($, shown, () => show)
+    return { text: show ? 'band on (/context-meter off hides it)' : 'band off (/context-meter on shows it)' }
   })
 
   on('session.measure', async ($, e, next) => {
@@ -141,6 +162,7 @@ export const register: Register = (on, options) => {
 
   on('ui.render', { component: 'AbovePrompt' }, async ($, e, next) => {
     const below = await next(e)
+    if (!(await isShown($, options.band))) return below
     const r = await read($, reading)
     if (e.props.hasSurvey || r === null || r.window <= 0) return below
     const { Box, Button, Text } = $.ui.resolve(e)

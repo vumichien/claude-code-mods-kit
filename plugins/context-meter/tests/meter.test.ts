@@ -34,11 +34,12 @@ function context(used = 46_000, live = true) {
   }
 }
 
-type Host = { usage: () => unknown; rateLimits: unknown[]; compact: () => unknown; toasts: string[]; compacts: number; commands: string[] }
+// hidden: leave the band as the session starts it (hidden unless the band option is on); otherwise /context-meter on.
+type Host = { usage: () => unknown; rateLimits: unknown[]; compact: () => unknown; toasts: string[]; compacts: number; commands: string[]; hidden: boolean }
 
 // Every stub sits beneath the plugin and is registered before the first $ call.
 async function start($: any, on: any, overrides: Partial<Host> = {}) {
-  const host: Host = { usage: () => context(), rateLimits: [], compact: () => ({ messages: SUMMARY }), toasts: [], compacts: 0, commands: [], ...overrides }
+  const host: Host = { usage: () => context(), rateLimits: [], compact: () => ({ messages: SUMMARY }), toasts: [], compacts: 0, commands: [], hidden: false, ...overrides }
   const clk = mock.clock(on, { now: 1_000_000 })
   on('session.usage', () => ({ value: { startedAt: 0, context: host.usage(), rateLimits: host.rateLimits } }))
   // The engine fills a compaction's messages from the transcript; here the transcript is empty.
@@ -63,8 +64,12 @@ async function start($: any, on: any, overrides: Partial<Host> = {}) {
   on('ui.render', ($: any, e: any) => h($.ui.resolve(e).Box, { key: 'engine-band' }))
   await $.session.start({ cwd: 'C:/work/app', surface: 'terminal', isInteractive: true })
   await clk.settle()
+  if (!host.hidden) await toggle($, 'on')
   return { clk, host }
 }
+
+// /context-meter as a person types it.
+const toggle = ($: any, args: string) => $.command.run({ command: 'context-meter', args })
 
 const USAGE = { input_tokens: 1, output_tokens: 1, cache_read_input_tokens: 0, cache_creation_input_tokens: 0, model: 'claude-test' }
 
@@ -274,6 +279,37 @@ describe('context-meter band', () => {
     const { ui } = await band($)
     await ui.press({ key: 'compact' })
     expect(host.toasts).toEqual(['context-meter: compaction skipped: a PreCompact hook blocked it'])
+  })
+
+  test('the band is hidden until /context-meter shows it; the bare command flips it, on and off set it', async ($, on) => {
+    await start($, on, { hidden: true })
+    expect(await (await band($)).text(/^context/)).toBeUndefined()
+    expect((await toggle($, '')).text).toBe('band on (/context-meter off hides it)')
+    expect(await (await band($)).text(/^context/)).toBe('context ▸ 46k of 200k · 23% · compacts at 167k ')
+    await toggle($, '')
+    expect(await (await band($)).text(/^context/)).toBeUndefined()
+    await toggle($, 'ON')
+    await toggle($, 'on')
+    expect(await (await band($)).text(/^context/)).toBeDefined()
+    expect((await toggle($, 'maybe')).text).toContain('use /context-meter')
+  })
+
+  test('while hidden the meter keeps measuring, so the band is current when it comes back', async ($, on) => {
+    let used = 46_000
+    const { clk } = await start($, on, { usage: () => context(used), hidden: true })
+    await turn($)
+    await $.session.compact({ trigger: 'manual', messages: SUMMARY })
+    used = 20_000
+    await clk.advance(1000)
+    await toggle($, 'on')
+    expect(await (await band($)).text(/^context/)).toBe('context ▸ 20k of 200k · 10% · compacts at 167k ')
+  })
+
+  test('the band option shows it from the start', { options: { band: 'on' } }, async ($, on) => {
+    await start($, on, { hidden: true })
+    expect(await (await band($)).text(/^context/)).toBeDefined()
+    await toggle($, 'off')
+    expect(await (await band($)).text(/^context/)).toBeUndefined()
   })
 
   test('while a turn runs there is no button; a short band keeps the fill and the clock only', async ($, on) => {

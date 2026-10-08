@@ -8,6 +8,11 @@ const EDIT_TOOLS = ['Edit', 'Write', 'MultiEdit', 'NotebookEdit']
 const SHELL_TOOLS = ['Bash', 'PowerShell']
 const DEFAULT_IGNORE = '.md,.mdx,.markdown,.txt,.rst,.adoc,.org'
 const gate = atom({ plugin: 'done-gate', key: 'gate' } as const, { lastTest: null, unchecked: [], warnings: 0 } as Gate)
+// The band shows only when asked: `/done-gate on` shows it and `/done-gate off` hides it, for this session; until
+// then the `band` option decides. Hiding it changes the drawing only: edits and test runs are still tracked, and
+// Claude still gets its note when a task is marked done too early.
+const shown = atom({ plugin: 'done-gate', key: 'shown' } as const, null)
+const SWITCH: Record<string, boolean> = { on: true, off: false }
 
 // Task names by id, from TaskCreate: a TaskUpdate call carries only the id. Each edit gets the next number, so a
 // test run clears only the edits made before it started, not one made while it ran.
@@ -72,12 +77,21 @@ export const register: Register = (on, options) => {
   const setup: Setup = { root: '', extra: list(options.testCommands), ignore: list(options.ignore ?? DEFAULT_IGNORE), subjects: new Map(), edits: 0, editedAt: new Map() }
 
   on('session.start', async ($, e, next) => {
-    await $.command.register({ name: 'done-gate', description: 'Show the last test run and the code files changed since' })
+    await $.command.register({
+      name: 'done-gate',
+      description: 'Show the last test run and the code files changed since (/done-gate on or off shows or hides the band)',
+      argumentHint: '[on|off]',
+    })
     setup.root = await $.session.root()
     return next(e)
   })
 
   on('command.run', { command: 'done-gate' }, async ($, e) => {
+    const show = SWITCH[e.args.trim().toLowerCase()]
+    if (show !== undefined) {
+      await update($, shown, () => show)
+      return { text: show ? 'band on (/done-gate off hides it)' : 'band off (/done-gate on shows it)' }
+    }
     const now = await read($, gate)
     const head = describe(now, await $.clock.now()) ?? 'done-gate ▸ no code changed and no test run yet'
     const tail = now.unchecked.length > 0 ? `\nchanged since: ${now.unchecked.join(', ')}` : ''
@@ -103,6 +117,7 @@ export const register: Register = (on, options) => {
 
   on('ui.render', { component: 'AbovePrompt' }, async ($, e, next) => {
     const below = await next(e)
+    if (!((await read($, shown)) ?? options.band === 'on')) return below
     const text = describe(await read($, gate), await $.clock.now())
     if (e.props.hasSurvey || text === undefined) return below
     const { Box, Text } = $.ui.resolve(e)

@@ -5,9 +5,9 @@ Four small [Claude Code](https://code.claude.com) mods, free to use under the MI
 | Mod | What it does | Command |
 |---|---|---|
 | **secret-guard** | Reads every `.env` from your session's folder up to the drive root when a session starts (a project's own `.env` and the workspace `.env` above it) and hides those values in every tool result before Claude reads it. `cat .env` reaches Claude as `DEMO_API_KEY=‹hidden: DEMO_API_KEY›`. | `/secret-guard` lists the protected key names |
-| **plan-meter** | A one-line band above the prompt that says how far your plan is: `plan ▸ Ship the export · phases 1/3 · steps 3/6 (50%) · now: API · Claude's tasks 2/5`. It reads your plan file (and the phase files it links to) in [many formats](#plan-formats-plan-meter-reads), and Claude's own task list. It updates when a file changes. | `/plan` opens a pane with the details; `/plan docs/roadmap.md` picks a file |
-| **done-gate** | When Claude marks a task done while code it changed has not been tested since, it tells Claude, in the tool result Claude reads, and you, in a toast. A band shows the last test run: `done-gate ▸ tests ✔ passed 4 min ago · 2 files changed since`. **It warns; it never blocks.** | `/done-gate` lists the changed files and the last test command |
-| **context-meter** | A band above the prompt with what fills the context window, by category and in `/context`'s colours (`context ▸ 90k of 1M · 9% · compacts at 987k`), and a countdown to when the prompt cache expires, which turns from green through amber to red: `cache ▸ 41:07 left (1h TTL, assumed: subscription)`. A **Compact** button (or `c` while the band has focus) runs the same compaction as `/compact`. | the button |
+| **plan-meter** | A one-line band above the prompt that says how far your plan is: `plan ▸ Ship the export · phases 1/3 · steps 3/6 (50%) · now: API · Claude's tasks 2/5`. It reads your plan file (and the phase files it links to) in [many formats](#plan-formats-plan-meter-reads), and Claude's own task list. It updates when a file changes. | `/plan-meter on` / `/plan-meter off` shows or hides the band; `/plan-meter` opens a pane with the details; `/plan-meter docs/roadmap.md` picks a file |
+| **done-gate** | When Claude marks a task done while code it changed has not been tested since, it tells Claude, in the tool result Claude reads, and you, in a toast. A band shows the last test run: `done-gate ▸ tests ✔ passed 4 min ago · 2 files changed since`. **It warns; it never blocks.** | `/done-gate on` / `/done-gate off` shows or hides the band; `/done-gate` lists the changed files and the last test command |
+| **context-meter** | A band above the prompt with what fills the context window, by category and in `/context`'s colours (`context ▸ 90k of 1M · 9% · compacts at 987k`), and a countdown to when the prompt cache expires, which turns from green through amber to red: `cache ▸ 41:07 left (1h TTL, assumed: subscription)`. A **Compact** button (or `c` while the band has focus) runs the same compaction as `/compact`. | `/context-meter` shows or hides the band (`on` / `off` to set it); the button |
 
 Tested on Claude Code 2.1.291 on Windows 11. Mods are an early-access feature, so the API can change between versions; if a mod stops loading after an update, check `claude plugin validate` on its folder.
 
@@ -32,9 +32,11 @@ claude plugin install context-meter@chien-mods
 
 Start a new session afterwards. To remove one: `claude plugin uninstall plan-meter@chien-mods`.
 
+**The bands start hidden.** plan-meter, done-gate and context-meter each draw a band above the prompt, but only when you ask: type `/plan-meter on`, `/done-gate on` or `/context-meter on` when you want to see it, and `off` to hide it again (a bare `/context-meter` flips it). The choice lasts for the session. Hiding a band changes only what is drawn: the plan is still read, done-gate still tells Claude when a task is marked done too early, and context-meter still measures, so a band is current the moment it comes back. To have a band from the start, set that mod's `band` option to `on`.
+
 ## Options
 
-Every option has a default, so all four mods work without any. To change one, use `/plugin configure <name>@chien-mods` inside Claude Code, pass `--config key=value` to `claude plugin install`, or pipe a JSON object to `claude plugin configure <name>@chien-mods --values-stdin`. With `--plugin-dir`, put them in a settings file: `--settings '{"pluginConfigs":{"done-gate":{"options":{"testCommands":"make ci"}}}}'`.
+Every option has a default, so all four mods work without any. plan-meter, done-gate and context-meter share one: `band`, `off` (default) or `on`, whether the band shows before you switch it with its command. To change one, use `/plugin configure <name>@chien-mods` inside Claude Code, pass `--config key=value` to `claude plugin install`, or pipe a JSON object to `claude plugin configure <name>@chien-mods --values-stdin`. With `--plugin-dir`, put them in a settings file: `--settings '{"pluginConfigs":{"done-gate":{"options":{"testCommands":"make ci"}}}}'`.
 
 **secret-guard**
 
@@ -46,7 +48,7 @@ Every option has a default, so all four mods work without any. To change one, us
 - `plan`: comma-separated paths, relative to the project, tried in order; the first one that matches a file wins. A `*` in any part matches anything, and among several matches the most recently changed file wins. Default: `plans/*/plan.md, PLAN.md, plan.md, TODO.md, TASKS.md, ROADMAP.md, todo.txt, TODO.org`.
 - `refreshSeconds` (default 15, at least 5): how often the plan is read again, so an edit you make in your own editor shows up too. Edits Claude makes show up at once.
 
-The band shows only when there is a plan or a task list. The pane draws in the terminal and the desktop app; under `claude -p`, `/plan` answers with the band's line.
+The band shows only when there is a plan or a task list. The pane draws in the terminal and the desktop app; under `claude -p`, `/plan-meter` answers with the band's line. (The command was `/plan` up to 0.1.0; Claude Code 2.1.294 has a built-in `/plan`, which refused the name.)
 
 **context-meter**
 
@@ -121,10 +123,10 @@ Mods are not sandboxed. A mod's hooks run with your permissions and can read fil
 - In a throwaway folder holding a `.env` of fake canary values, a demo plan with two phase files, and a small Python file, real Claude Code sessions (2.1.291, haiku) ran with the three mods, once loaded by `--plugin-dir` and once installed from this repository with `claude plugin marketplace add vumichien/claude-code-mods-kit`:
   - asked to run `cat .env`, Claude received two `‹hidden: …›` markers and no canary value;
   - asked to add a task, change the Python file, tick the plan's step and mark the task done without running anything, Claude received the done-gate note and quoted it back;
-  - `/plan` answered `phases 0/2 · steps 1/4 (25%)` before that session and `steps 2/4 (50%)` after it, with no model turn.
+  - `/plan` (now `/plan-meter`) answered `phases 0/2 · steps 1/4 (25%)` before that session and `steps 2/4 (50%)` after it, with no model turn.
 - A second reviewer, OpenAI's Codex, read both new mods; its 13 findings (a test runner named only inside `echo`, `cat` counted as running a file, and parsing and path cases) are fixed and each has a test.
 - In a control session without the mods, both canary values reached Claude and no note appeared.
-- The live-session checks above are for the first three mods. context-meter (added 2026-10-08, on Claude Code 2.1.294) is checked by `validate`, `tsc` and its 23 tests, which drive its band, countdown and button against the engine's test host, and in one live terminal session (2.1.294, a 1M window): before `/compact` the band read `178k of 1M · 18%`, against the 179,681 tokens Claude Code recorded for the compaction; once the compaction finished, before any new message, it read `98k of 1M · 10%`, and the cache line had reset to `starts with the next message`.
+- The live-session checks above are for the first three mods. context-meter (added 2026-10-08, on Claude Code 2.1.294) is checked by `validate`, `tsc` and its 26 tests, which drive its band, countdown and button against the engine's test host, and in one live terminal session (2.1.294, a 1M window): before `/compact` the band read `178k of 1M · 18%`, against the 179,681 tokens Claude Code recorded for the compaction; once the compaction finished, before any new message, it read `98k of 1M · 10%`, and the cache line had reset to `starts with the next message`.
 
 ## Licence
 

@@ -25,6 +25,7 @@ export type CacheStamp = { lastAt: number | null }
 declare module 'claude-code' {
   interface PluginState {
     // notice: what the Compact button last did ("compacting…", or why it could not), until the next turn ends.
-    'context-meter': { reading: ContextReading | null; cache: CacheStamp; now: number; onSubscription: boolean; notice: string | null }
+    // shown: the band switched on or off with /context-meter this session; null until then (the band option decides).
+    'context-meter': { reading: ContextReading | null; cache: CacheStamp; now: number; onSubscription: boolean; notice: string | null; shown: boolean | null }
   }
 }

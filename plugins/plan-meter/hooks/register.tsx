@@ -12,10 +12,14 @@ const EDIT_TOOLS = ['Edit', 'Write', 'MultiEdit', 'NotebookEdit']
 const ZERO = { done: 0, active: 0, todo: 0, total: 0 }
 const meter = atom({ plugin: 'plan-meter', key: 'meter' } as const, null)
 const tasks = atom({ plugin: 'plan-meter', key: 'tasks' } as const, [] as ClaudeTask[])
+// The band shows only when asked: `/plan-meter on` shows it and `/plan-meter off` hides it, for this session; until
+// then the `band` option decides. Hiding it changes the drawing only: the plan is still read and /plan-meter still answers.
+const shown = atom({ plugin: 'plan-meter', key: 'shown' } as const, null)
+const SWITCH: Record<string, boolean> = { on: true, off: false }
 
 type Setup = { root: string; patterns: string[]; chosen: string | undefined; watched: string[] }
 
-// The timer, edits and /plan can overlap: only the newest reading may be written.
+// The timer, edits and /plan-meter can overlap: only the newest reading may be written.
 let newestRead = 0
 
 // Expands a pattern one segment at a time (`*` in any segment); the most recently changed match wins.
@@ -48,7 +52,7 @@ async function measure($: any, setup: Setup): Promise<{ meter: PlanMeter; watche
     path = await newest($, setup.root, pattern)
     if (path !== undefined) break
   }
-  if (path === undefined) return { meter: { ...empty, error: `no plan found (${setup.patterns.join(', ')}); name one with /plan <path>` }, watched: [] }
+  if (path === undefined) return { meter: { ...empty, error: `no plan found (${setup.patterns.join(', ')}); name one with /plan-meter <path>` }, watched: [] }
   const file = relativeTo(setup.root, path)
   try {
     const plan = parsePlan(await $.fs.read(path), path)
@@ -71,7 +75,7 @@ async function measure($: any, setup: Setup): Promise<{ meter: PlanMeter; watche
   }
 }
 
-// The timer, edits and /plan can overlap: only the newest reading is kept, checked again as it is written.
+// The timer, edits and /plan-meter can overlap: only the newest reading is kept, checked again as it is written.
 async function refresh($: any, setup: Setup): Promise<PlanMeter> {
   const reading = ++newestRead
   const found = await measure($, setup)
@@ -106,7 +110,14 @@ export const register: Register = (on, options) => {
   const everyMs = Math.max(5, Number(options.refreshSeconds ?? 15)) * 1000
 
   on('session.start', async ($, e, next) => {
-    await $.command.register({ name: 'plan', description: "Show the plan's progress (/plan <path> picks a file)" })
+    // Not /plan: Claude Code has a built-in of that name, and a refused name must not stop the plan being read.
+    await $.command
+      .register({
+        name: 'plan-meter',
+        description: "Show the plan's progress (/plan-meter <path> picks a file; /plan-meter on or off shows or hides the band)",
+        argumentHint: '[on|off|<path>]',
+      })
+      .catch(() => undefined)
     setup.root = await $.session.root()
     await refresh($, setup)
     // Catches edits made outside Claude Code too, such as the plan open in your editor.
@@ -114,7 +125,12 @@ export const register: Register = (on, options) => {
     return next(e)
   })
 
-  on('command.run', { command: 'plan' }, async ($, e) => {
+  on('command.run', { command: 'plan-meter' }, async ($, e) => {
+    const show = SWITCH[e.args.trim().toLowerCase()]
+    if (show !== undefined) {
+      await update($, shown, () => show)
+      return { text: show ? 'band on (/plan-meter off hides it)' : 'band off (/plan-meter on shows it)' }
+    }
     if (e.args.trim() !== '') setup.chosen = resolvePath(setup.root, e.args)
     const found = await refresh($, setup)
     // Panes draw only in the terminal and the desktop app; under claude -p the line below is the answer.
@@ -146,6 +162,7 @@ export const register: Register = (on, options) => {
 
   on('ui.render', { component: 'AbovePrompt' }, async ($, e, next) => {
     const below = await next(e)
+    if (!((await read($, shown)) ?? options.band === 'on')) return below
     const now = await read($, meter)
     const list = await read($, tasks)
     // A project with no plan and no task list gets no band at all.

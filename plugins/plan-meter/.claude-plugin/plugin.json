@@ -1,6 +1,6 @@
 {
   "name": "plan-meter",
-  "version": "0.1.0",
+  "version": "0.2.0",
   "description": "A band above the prompt with how far your plan file is (phases and steps done, what is in progress, what is next) and Claude's own task list, kept current as files change",
   "author": {
     "name": "Chien Vu Minh"
@@ -20,6 +20,16 @@
       "title": "Re-read every (seconds)",
       "description": "How often the plan is read again, to catch edits made outside Claude Code. At least 5.",
       "default": 15
+    },
+    "band": {
+      "type": "string",
+      "title": "Band above the prompt",
+      "description": "off: the band stays hidden until you type /plan-meter on, and /plan-meter off hides it again. on: the band shows from the start. Either way the mod keeps working; this changes only what is drawn.",
+      "default": "off",
+      "options": [
+        "off",
+        "on"
+      ]
     }
   }
 }

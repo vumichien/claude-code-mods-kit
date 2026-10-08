@@ -7,7 +7,7 @@ const BAND = { hasSurvey: false, isWorking: false, maxRows: 10, bodyColumns: 200
 
 // What the stubbed engine answers per command: exit status by pattern; everything else succeeds.
 // `wait`, when set, holds a Bash call open until the test lets it finish. `refuseUpdates` answers TaskUpdate with a failure.
-type Host = { failing: RegExp | null; background: boolean; wait?: Promise<void>; refuseUpdates?: boolean; output?: string }
+type Host = { failing: RegExp | null; background: boolean; wait?: Promise<void>; refuseUpdates?: boolean; output?: string; hidden?: boolean }
 
 // Every stub sits beneath the plugin and is registered before the first $ call.
 async function start($: any, on: any, host: Host = { failing: null, background: false }) {
@@ -42,6 +42,8 @@ async function start($: any, on: any, host: Host = { failing: null, background: 
   on('ui.render', ($: any, e: any) => h($.ui.resolve(e).Box, { key: 'engine-band' }))
   await $.session.start({ cwd: ROOT, surface: 'terminal', isInteractive: true })
   await clock.settle()
+  // As a person would; a test of the hidden band leaves it as the session starts it.
+  if (host.hidden !== true) await $.command.run({ command: 'done-gate', args: 'on' })
   return clock
 }
 
@@ -214,6 +216,23 @@ describe('done-gate', () => {
     await edit($, 'src/export.py')
     await bash($, './scripts/check.sh')
     expect(await bandText($)).toBe('done-gate ▸ tests ✔ passed 0 s ago')
+  })
+
+  test('the band is hidden until /done-gate on; hidden, Claude still gets the note', async ($, on) => {
+    await start($, on, { failing: null, background: false, hidden: true })
+    await edit($, 'src/export.py')
+    expect(await bandText($)).toBeUndefined()
+    expect(((await complete($)) as any).context?.[0]).toContain('"Add the export" was marked done')
+    expect((await ($ as any).command.run({ command: 'done-gate', args: 'on' })).text).toBe('band on (/done-gate off hides it)')
+    expect(await bandText($)).toBe('done-gate ▸ no test run yet · 1 file changed since · warned 1×')
+    await ($ as any).command.run({ command: 'done-gate', args: 'off' })
+    expect(await bandText($)).toBeUndefined()
+  })
+
+  test('the band option shows it from the start', { options: { band: 'on' } }, async ($, on) => {
+    await start($, on, { failing: null, background: false, hidden: true })
+    await edit($, 'src/export.py')
+    expect(await bandText($)).toBe('done-gate ▸ no test run yet · 1 file changed since')
   })
 
   test('/done-gate lists the changed files and the last test command', async ($, on) => {

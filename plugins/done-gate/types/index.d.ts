@@ -9,6 +9,7 @@ export type Gate = {
 
 declare module 'claude-code' {
   interface PluginState {
-    'done-gate': { gate: Gate }
+    // shown: the band switched on or off with /done-gate on|off this session; null until then (the band option decides).
+    'done-gate': { gate: Gate; shown: boolean | null }
   }
 }
