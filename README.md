@@ -124,7 +124,7 @@ Mods are not sandboxed. A mod's hooks run with your permissions and can read fil
   - `/plan` answered `phases 0/2 · steps 1/4 (25%)` before that session and `steps 2/4 (50%)` after it, with no model turn.
 - A second reviewer, OpenAI's Codex, read both new mods; its 13 findings (a test runner named only inside `echo`, `cat` counted as running a file, and parsing and path cases) are fixed and each has a test.
 - In a control session without the mods, both canary values reached Claude and no note appeared.
-- The live-session checks above are for the first three mods. context-meter (added 2026-10-08, on Claude Code 2.1.294) is so far checked by `validate`, `tsc` and its 23 tests, which drive its band, countdown and button against the engine's test host.
+- The live-session checks above are for the first three mods. context-meter (added 2026-10-08, on Claude Code 2.1.294) is checked by `validate`, `tsc` and its 23 tests, which drive its band, countdown and button against the engine's test host, and in one live terminal session (2.1.294, a 1M window): before `/compact` the band read `178k of 1M · 18%`, against the 179,681 tokens Claude Code recorded for the compaction; once the compaction finished, before any new message, it read `98k of 1M · 10%`, and the cache line had reset to `starts with the next message`.
 
 ## Licence
 
