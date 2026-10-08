@@ -1,12 +1,13 @@
 # claude-code-mods-kit
 
-Three small [Claude Code](https://code.claude.com) mods, free to use under the MIT licence. A mod is a plugin made of function hooks: Claude Code calls it at every step (a tool call, a slash command, a redraw), and it can answer, change or watch that step.
+Four small [Claude Code](https://code.claude.com) mods, free to use under the MIT licence. A mod is a plugin made of function hooks: Claude Code calls it at every step (a tool call, a slash command, a redraw), and it can answer, change or watch that step.
 
 | Mod | What it does | Command |
 |---|---|---|
-| **secret-guard** | Reads your project's `.env` when a session starts and hides those values in every tool result before Claude reads it. `cat .env` reaches Claude as `DEMO_API_KEY=‹hidden: DEMO_API_KEY›`. | `/secret-guard` lists the protected key names |
+| **secret-guard** | Reads every `.env` from your session's folder up to the drive root when a session starts (a project's own `.env` and the workspace `.env` above it) and hides those values in every tool result before Claude reads it. `cat .env` reaches Claude as `DEMO_API_KEY=‹hidden: DEMO_API_KEY›`. | `/secret-guard` lists the protected key names |
 | **plan-meter** | A one-line band above the prompt that says how far your plan is: `plan ▸ Ship the export · phases 1/3 · steps 3/6 (50%) · now: API · Claude's tasks 2/5`. It reads your plan file (and the phase files it links to) in [many formats](#plan-formats-plan-meter-reads), and Claude's own task list. It updates when a file changes. | `/plan` opens a pane with the details; `/plan docs/roadmap.md` picks a file |
 | **done-gate** | When Claude marks a task done while code it changed has not been tested since, it tells Claude, in the tool result Claude reads, and you, in a toast. A band shows the last test run: `done-gate ▸ tests ✔ passed 4 min ago · 2 files changed since`. **It warns; it never blocks.** | `/done-gate` lists the changed files and the last test command |
+| **context-meter** | A band above the prompt with what fills the context window, by category and in `/context`'s colours (`context ▸ 90k of 1M · 9% · compacts at 987k`), and a countdown to when the prompt cache expires, which turns from green through amber to red: `cache ▸ 41:07 left (1h TTL, assumed: subscription)`. A **Compact** button (or `c` while the band has focus) runs the same compaction as `/compact`. | the button |
 
 Tested on Claude Code 2.1.291 on Windows 11. Mods are an early-access feature, so the API can change between versions; if a mod stops loading after an update, check `claude plugin validate` on its folder.
 
@@ -26,13 +27,14 @@ claude plugin marketplace add vumichien/claude-code-mods-kit
 claude plugin install secret-guard@chien-mods
 claude plugin install plan-meter@chien-mods
 claude plugin install done-gate@chien-mods
+claude plugin install context-meter@chien-mods
 ```
 
 Start a new session afterwards. To remove one: `claude plugin uninstall plan-meter@chien-mods`.
 
 ## Options
 
-Every option has a default, so all three mods work without any. To change one, use `/plugin configure <name>@chien-mods` inside Claude Code, pass `--config key=value` to `claude plugin install`, or pipe a JSON object to `claude plugin configure <name>@chien-mods --values-stdin`. With `--plugin-dir`, put them in a settings file: `--settings '{"pluginConfigs":{"done-gate":{"options":{"testCommands":"make ci"}}}}'`.
+Every option has a default, so all four mods work without any. To change one, use `/plugin configure <name>@chien-mods` inside Claude Code, pass `--config key=value` to `claude plugin install`, or pipe a JSON object to `claude plugin configure <name>@chien-mods --values-stdin`. With `--plugin-dir`, put them in a settings file: `--settings '{"pluginConfigs":{"done-gate":{"options":{"testCommands":"make ci"}}}}'`.
 
 **secret-guard**
 
@@ -45,6 +47,13 @@ Every option has a default, so all three mods work without any. To change one, u
 - `refreshSeconds` (default 15, at least 5): how often the plan is read again, so an edit you make in your own editor shows up too. Edits Claude makes show up at once.
 
 The band shows only when there is a plan or a task list. The pane draws in the terminal and the desktop app; under `claude -p`, `/plan` answers with the band's line.
+
+**context-meter**
+
+- `cacheTtl`: `auto` (default), `5m` or `1h`. A mod cannot read the cache lifetime Claude Code asks for, so `auto` follows Claude Code's defaults: one hour on a Claude subscription (the session reports rate-limit windows), five minutes with an API key or a cloud provider. Set it when you know better: you set `promptCacheTtl` or `ENABLE_PROMPT_CACHING_1H`, or you are drawing on usage credits, where Claude Code drops to five minutes. The band always says which lifetime it assumed and why.
+- `breakdown`: `summary` (default) estimates the categories locally and sends nothing. `full` counts them with the token-count API after every turn, as `/context` does: more exact, one request per tool and memory file.
+
+Every request of the main conversation that hits the cache resets its timer, so the clock restarts at each model request, from the moment it was sent, not only when a turn ends. While Claude works the band says the cache is being kept warm; the countdown runs between turns, from the last request. A subagent's requests have caches of their own and are left out. After a compaction it starts again with the next message. The button is hidden while a turn runs and before the conversation's first reply, when Claude Code refuses a compaction ("Not enough messages to compact"); if a compaction is refused or a hook vetoes it, the band says why, and so does a toast. If you set `CLAUDE_AUTOCOMPACT_PCT_OVERRIDE`, which can only bring auto-compaction earlier, the header shows that point and marks it as your setting (`compacts at 500k (your 50% setting)`), since the breakdown Claude Code returns may still give its default; that one environment variable is all context-meter reads. In the desktop app and the IDE extensions, which run Claude Code through its SDK, Claude Code cannot compact between turns yet, so there the button runs `/compact` as if you had typed it. Below the bar, every category and the free part get a coloured entry with their tokens and share of the window, wrapped onto as many rows as they need. **Compacting is a model call**: the band costs no tokens, the button does. With little room above the prompt the band keeps two rows, the fill and the cache clock.
 
 **done-gate**
 
@@ -97,13 +106,14 @@ The title is the frontmatter `title:`, else the first `#` heading (a leading `Pl
 ## What secret-guard does not do
 
 - **It is not a security boundary.** It hides exact copies of the values in your `.env`. In the author's tests it missed a base64-encoded copy and two partial prefixes of a value. To stop Claude from reading a file at all, use [permission deny rules](https://code.claude.com/docs/en/permissions) such as `Read(./.env)`, the sandbox, OS file permissions or a secrets manager.
-- It reads the nearest `.env` at or above the folder where the session starts, at session start. A value added later is protected from the next session.
+- It reads every `.env` at or above the folder where the session starts, at session start, so a project's own `.env` does not hide the workspace `.env` above it. A value added later is protected from the next session. A `.env` elsewhere (a secrets folder in your home directory, another project) is not read.
+- If any of those files fails to parse (a quoted value that never closes), it refuses every call in that session. `claude plugin disable secret-guard@chien-mods` turns it off.
 - When it cannot check a result, it withholds the result rather than letting it through. If the `.env` failed to load, it refuses every call and `/secret-guard` says why; if a check failed, or a value sat in a result as a number it can't replace, `/secret-guard` counts the results it withheld.
 - It keeps the values in memory only: never in a file, a log, the status line or Claude Code's state.
 
 ## Before you install any mod
 
-Mods are not sandboxed. A mod's hooks run with your permissions and can read files and start processes. These three are short; read them first. `claude plugin validate plugins/<name>` lists every hook a mod registers and every call it makes. None of the three starts a process or uses the network.
+Mods are not sandboxed. A mod's hooks run with your permissions and can read files and start processes. These four are short; read them first. `claude plugin validate plugins/<name>` lists every hook a mod registers and every call it makes. None of the four starts a process or uses the network of its own. (context-meter's `breakdown: full` asks Claude Code to count tokens, which Claude Code does with the API; its Compact button asks Claude Code for a compaction, which is a model call.)
 
 ## How it was tested
 
@@ -114,6 +124,7 @@ Mods are not sandboxed. A mod's hooks run with your permissions and can read fil
   - `/plan` answered `phases 0/2 · steps 1/4 (25%)` before that session and `steps 2/4 (50%)` after it, with no model turn.
 - A second reviewer, OpenAI's Codex, read both new mods; its 13 findings (a test runner named only inside `echo`, `cat` counted as running a file, and parsing and path cases) are fixed and each has a test.
 - In a control session without the mods, both canary values reached Claude and no note appeared.
+- The live-session checks above are for the first three mods. context-meter (added 2026-10-08, on Claude Code 2.1.294) is so far checked by `validate`, `tsc` and its 23 tests, which drive its band, countdown and button against the engine's test host.
 
 ## Licence
 

@@ -4,14 +4,14 @@
     "name": "Chien Vu Minh"
   },
   "metadata": {
-    "description": "Three small Claude Code mods: hide .env values from tool results, see how far your plan is, and get warned when a task is marked done with untested code."
+    "description": "Four small Claude Code mods: hide .env values from tool results, see how far your plan is, get warned when a task is marked done with untested code, and see what fills the context window and when the prompt cache expires."
   },
   "plugins": [
     {
       "name": "secret-guard",
       "source": "./plugins/secret-guard",
-      "description": "Hides your project's .env values from tool results before Claude reads them",
-      "version": "0.1.0",
+      "description": "Hides the values of every .env from your session's folder up to the drive root in tool results before Claude reads them",
+      "version": "0.2.0",
       "license": "MIT",
       "category": "productivity"
     },
@@ -28,6 +28,14 @@
       "source": "./plugins/done-gate",
       "description": "Warns Claude and you when a task is marked done while code it changed has not been tested since; a band shows the last test run. It never blocks",
       "version": "0.1.0",
+      "license": "MIT",
+      "category": "productivity"
+    },
+    {
+      "name": "context-meter",
+      "source": "./plugins/context-meter",
+      "description": "A band above the prompt with what fills the context window, by category, a countdown to when the prompt cache expires, and a Compact button",
+      "version": "0.1.5",
       "license": "MIT",
       "category": "productivity"
     }

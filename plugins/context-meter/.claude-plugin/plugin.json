@@ -1,0 +1,34 @@
+{
+  "name": "context-meter",
+  "version": "0.1.5",
+  "description": "A band above the prompt with what fills the context window, by category, a countdown to when the prompt cache expires, and a Compact button",
+  "author": {
+    "name": "Chien Vu Minh"
+  },
+  "license": "MIT",
+  "homepage": "https://github.com/vumichien/claude-code-mods-kit",
+  "types": "./types/index.d.ts",
+  "userConfig": {
+    "cacheTtl": {
+      "type": "string",
+      "title": "Prompt cache lifetime",
+      "description": "auto: 1h on a Claude subscription, 5m with an API key (Claude Code's defaults; a mod cannot read the real setting). Pick 5m or 1h if you set promptCacheTtl or are drawing on usage credits.",
+      "default": "auto",
+      "options": [
+        "auto",
+        "5m",
+        "1h"
+      ]
+    },
+    "breakdown": {
+      "type": "string",
+      "title": "How the categories are counted",
+      "description": "summary: estimated locally, no requests. full: counted with the token-count API after every turn, as /context does.",
+      "default": "summary",
+      "options": [
+        "summary",
+        "full"
+      ]
+    }
+  }
+}
