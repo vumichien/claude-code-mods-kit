@@ -76,6 +76,24 @@ describe('value mode', () => {
     }
   })
 
+  test('every .env from the session folder up is read, not only the nearest', async ($, on) => {
+    const PROJECT = 'canary-test-project-key-77aa'
+    const seen = await startSession($, on, {
+      'C:/ws/project/.env': `PROJECT_KEY=${PROJECT}\nSHARED=${KEY}`,
+      'C:/ws/.env': ENV,
+    }, () => bashResult(`${PROJECT} ${KEY} ${PW}\n`))
+    const out = await $.tool.call({ tool: 'Bash', command: 'env' })
+    const text = JSON.stringify(out)
+    for (const value of [PROJECT, KEY, PW]) expect(text).not.toContain(value)
+    // A value in both files keeps the nearest file's name.
+    expect(text).toContain('‹hidden: SHARED›')
+    expect(seen.status).toContain('secret-guard: 3 hidden this session')
+    const reply = (await runCommand($, 'secret-guard')).text
+    // PROJECT_KEY, SHARED (= LLM_API_KEY's value, counted once), PW and the 14-character ID.
+    expect(reply).toMatch(/protects 4 values from C:.ws.project.\.env, C:.ws.\.env: /)
+    for (const name of ['PROJECT_KEY', 'SHARED', 'PW', 'ID']) expect(reply).toContain(name)
+  })
+
   test('fails closed when the result cannot be checked', async ($, on) => {
     await start($, on, () => { throw new Error('tool exploded') })
     const out = await $.tool.call({ tool: 'Bash', command: 'cat .env' })

@@ -4,18 +4,22 @@
 
 export type Host = { status: unknown[]; log: unknown[]; answer: (e: any) => unknown }
 
-// envText as an Error makes the read fail, as an unreadable file would.
-export async function startSession($: any, on: any, envText: string | Error, answer: (e: any) => unknown): Promise<Host> {
+// env is the text of C:/ws/.env, or a map from path to text for several .env files. A text given as an
+// Error makes that read fail, as an unreadable file would.
+type EnvText = string | Error
+export async function startSession($: any, on: any, env: EnvText | Record<string, EnvText>, answer: (e: any) => unknown): Promise<Host> {
   const host: Host = { status: [], log: [], answer }
+  const files: Record<string, EnvText> = typeof env === 'string' || env instanceof Error ? { 'C:/ws/.env': env } : env
   // The host hands paths back with either separator.
-  const isEnv = (path: string) => path.replace(/\\/g, '/') === 'C:/ws/.env'
+  const lookup = (path: string) => files[path.replace(/\\/g, '/')]
   on('tool.call', ($: any, e: any) => host.answer(e))
   on('session.root', () => ({ value: 'C:/ws' }))
-  on('fs.exists', ($: any, e: any) => ({ value: isEnv(e.path) }))
+  on('fs.exists', ($: any, e: any) => ({ value: lookup(e.path) !== undefined }))
   on('fs.read', ($: any, e: any) => {
-    if (!isEnv(e.path)) throw new Error('unexpected read ' + e.path)
-    if (envText instanceof Error) throw envText
-    return { value: envText }
+    const text = lookup(e.path)
+    if (text === undefined) throw new Error('unexpected read ' + e.path)
+    if (text instanceof Error) throw text
+    return { value: text }
   })
   on('command.register', ($: any, e: any) => ({ value: { command: e.name } }))
   on('ui.status', ($: any, e: any) => { host.status.push(e.text); return { value: undefined } })

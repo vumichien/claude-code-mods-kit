@@ -1,6 +1,6 @@
 import type { Register } from 'claude-code'
 
-import { envCandidates, failClosed, findSecrets, mentionsEnvFile, parseEnv, scrub } from './secrets'
+import { envCandidates, failClosed, findSecrets, mentionsEnvFile, mergeSecrets, parseEnv, scrub } from './secrets'
 import type { Secret } from './secrets'
 
 // The input fields a person's first rule would look at for a file name.
@@ -11,7 +11,9 @@ export const register: Register = (on, options) => {
   const identifiers = new Set(String(options.identifierKeys ?? '').split(',').map(k => k.trim()).filter(Boolean))
   // Values live in this module variable only: never in $.ui, $.store, $.state or a log.
   let secrets: Secret[] = []
-  let envPath: string | undefined
+  // The .env files found, nearest first, and the one being looked at (named if loading fails).
+  const envPaths: string[] = []
+  let current: string | undefined
   let hidden = 0
   // 'ready' once the .env was looked for and read (or there is none). Until then, or after a failure, value
   // mode refuses every call: a guard that silently loaded nothing would pass every value through.
@@ -28,15 +30,26 @@ export const register: Register = (on, options) => {
       return next(e)
     }
     try {
-      search: for (const start of [e.cwd, await $.session.root()]) {
+      // Every .env from the session's folder up to the root, so a project's own .env does not hide the
+      // workspace .env above it. The two starts usually share their upper folders, so each is looked at once.
+      // session.start can fire again in one load (an enable, a worker respawn): start the list over.
+      envPaths.length = 0
+      const looked = new Set<string>()
+      for (const start of [e.cwd, await $.session.root()]) {
         for (const file of envCandidates(start)) {
-          if (await $.fs.exists(file)) {
-            envPath = file
-            break search
-          }
+          const key = file.replace(/\\/g, '/')
+          if (looked.has(key)) continue
+          looked.add(key)
+          current = file
+          if (await $.fs.exists(file)) envPaths.push(file)
         }
       }
-      if (envPath !== undefined) secrets = parseEnv(await $.fs.read(envPath), identifiers)
+      const lists: Secret[][] = []
+      for (const file of envPaths) {
+        current = file
+        lists.push(parseEnv(await $.fs.read(file), identifiers))
+      }
+      secrets = mergeSecrets(lists)
       loading = 'ready'
     } catch (err) {
       loading = 'failed'
@@ -48,13 +61,13 @@ export const register: Register = (on, options) => {
 
   on('command.run', { command: 'secret-guard' }, async () => {
     if (mode === 'command') return { text: 'mode command: refuses any call whose command or path names a .env file; values are not read' }
-    if (loading === 'failed') return { text: `could not load ${envPath ?? '.env'} (${loadError}), so value mode refuses every tool call` }
+    if (loading === 'failed') return { text: `could not load ${current ?? '.env'} (${loadError}), so value mode refuses every tool call` }
     // The start hook has not finished: still running, or skipped by the engine (it overran its budget).
     if (loading === 'pending') return { text: 'has not loaded the .env yet (its start hook did not finish), so value mode refuses every tool call' }
-    if (envPath === undefined) return { text: 'no .env found above this session, so nothing is protected' }
-    const names = secrets.map(s => s.name).join(', ') || 'none'
+    if (envPaths.length === 0) return { text: 'no .env found above this session, so nothing is protected' }
+    const names = [...new Set(secrets.map(s => s.name))].join(', ') || 'none'
     const failures = withheld > 0 ? `; ${withheld} results withheld because they could not be checked` : ''
-    return { text: `mode ${mode}; protects ${secrets.length} keys from ${envPath}: ${names}; ${hidden} values hidden this session${failures}` }
+    return { text: `mode ${mode}; protects ${secrets.length} values from ${envPaths.join(', ')}: ${names}; ${hidden} values hidden this session${failures}` }
   })
 
   on('tool.call', async ($, e, next) => {

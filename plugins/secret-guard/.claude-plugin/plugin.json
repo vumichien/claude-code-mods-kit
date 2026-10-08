@@ -1,7 +1,7 @@
 {
   "name": "secret-guard",
-  "version": "0.1.0",
-  "description": "Hides your project's .env values from tool results before Claude reads them",
+  "version": "0.2.0",
+  "description": "Hides the values of every .env from your session's folder up to the drive root in tool results before Claude reads them",
   "author": {
     "name": "Chien Vu Minh"
   },

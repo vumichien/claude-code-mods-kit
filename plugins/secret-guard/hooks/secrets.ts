@@ -65,6 +65,13 @@ export function parseEnv(text: string, identifiers: ReadonlySet<string>): Secret
   return secrets.sort((a, b) => b.value.length - a.value.length)
 }
 
+// Several .env files merged, nearest first: a value found in two files keeps the nearest file's name.
+export function mergeSecrets(lists: readonly (readonly Secret[])[]): Secret[] {
+  const byValue = new Map<string, Secret>()
+  for (const list of lists) for (const s of list) if (!byValue.has(s.value)) byValue.set(s.value, s)
+  return [...byValue.values()].sort((a, b) => b.value.length - a.value.length)
+}
+
 // The names of the values found in any string, number, array item, object value or object key.
 export function findSecrets(values: readonly unknown[], secrets: readonly Secret[]): string[] {
   const found = new Set<string>()
