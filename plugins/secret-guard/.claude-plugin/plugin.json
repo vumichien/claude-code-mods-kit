@@ -1,7 +1,7 @@
 {
   "name": "secret-guard",
-  "version": "0.2.0",
-  "description": "Hides the values of every .env from your session's folder up to the drive root in tool results before Claude reads them",
+  "version": "0.3.0",
+  "description": "Hides secrets in tool results before Claude reads them: the secret values of every .env and .env.* from your session's folder up to the drive root, and anything that looks like a secret (KEY=VALUE under a secret name, passwords in URLs, private keys, JWTs, AWS keys, Kubernetes Secrets); tells Claude how to use them without printing them",
   "author": {
     "name": "Chien Vu Minh"
   },
@@ -9,17 +9,29 @@
     "mode": {
       "type": "string",
       "title": "Mode",
-      "description": "value: hide .env values found in tool results. command: refuse any call whose input names a .env file.",
+      "description": "value: hide secrets found in tool results and refuse commands that print a whole env file or a decrypted secret. command: refuse any call whose input names a protected env file (except to load it), without reading values.",
       "default": "value",
       "options": [
         "value",
         "command"
       ]
     },
+    "secretFiles": {
+      "type": "string",
+      "title": "Secret files",
+      "description": "Comma-separated globs of env files to read. A file name is looked for from the session's folder up to the drive root; a path (~/vault/**/.env) is read where it points; !glob leaves files out.",
+      "default": ".env, .env.*, !*.example"
+    },
+    "secretKeys": {
+      "type": "string",
+      "title": "Secret keys",
+      "description": "Comma-separated key names to treat as secrets on top of the built-in rule (a part of the name is PASS, PASSWORD, PW, SECRET, TOKEN, KEY, DSN, CREDENTIAL or PRIVATE).",
+      "default": ""
+    },
     "identifierKeys": {
       "type": "string",
       "title": "Identifier keys",
-      "description": "Comma-separated .env keys that hold names, not secrets (a login name that appears in ordinary paths); never hidden.",
+      "description": "Comma-separated key names that hold names, not secrets (KMS_KEY_ID, a login name); never hidden.",
       "default": ""
     }
   },

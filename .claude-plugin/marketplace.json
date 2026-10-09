@@ -4,14 +4,14 @@
     "name": "Chien Vu Minh"
   },
   "metadata": {
-    "description": "Four small Claude Code mods: hide .env values from tool results, see how far your plan is, get warned when a task is marked done with untested code, and see what fills the context window and when the prompt cache expires."
+    "description": "Four small Claude Code mods: hide secrets from tool results, see how far your plan is, get warned when a task is marked done with untested code, and see what fills the context window and when the prompt cache expires."
   },
   "plugins": [
     {
       "name": "secret-guard",
       "source": "./plugins/secret-guard",
-      "description": "Hides the values of every .env from your session's folder up to the drive root in tool results before Claude reads them",
-      "version": "0.2.0",
+      "description": "Hides secrets in tool results before Claude reads them: the secret values of every .env and .env.* from your session's folder up to the drive root, and anything that looks like a secret; tells Claude how to use them without printing them",
+      "version": "0.3.0",
       "license": "MIT",
       "category": "productivity"
     },
