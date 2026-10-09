@@ -97,7 +97,7 @@ export function isSecretLiteral(value: string, bare = false): boolean {
   // A path to a key file is not the key: ~/.ssh/id_rsa, ./certs/app.pem, C:\keys\app.p12.
   if (/^(~|\.{1,2})[\\/]|^[A-Za-z]:[\\/]/.test(value)) return false
   if (/\$\{|\$\(|process\.env|os\.environ|getenv|ENV\[/.test(value)) return false
-  // An unquoted attribute in code, not a literal: `tok.pad_token = tok.eos_token`. Generated values hold digits.
+  // An unquoted attribute in code, not a literal: `self.api_key = config.service_key`. Generated values hold digits.
   if (bare && /^[A-Za-z_]+(\.[A-Za-z_]+)+$/.test(value)) return false
   // A mask someone already put there: ********, xxxxxxxx, ........, or a kept prefix and a masked rest (sk_****).
   return !/^([*xX.•])\1*$/.test(value) && !/[*•]{4,}$/.test(value)
@@ -178,7 +178,7 @@ export class Vault {
       const quoted = /^["']/.test(raw)
       const value = quoted ? raw.slice(1, -1) : raw
       if (!isSecretKey(key, this.rule) || !isSecretLiteral(value, !quoted)) return all
-      // A key inside a quoted string (`grep 'TOKEN=' .env | cut -d= -f2-`): the quote after it closes that
+      // A key inside a quoted string (`rg -c "API_SECRET=" deploy/*.ini`): the quote after it closes that
       // string, and what follows up to the next quote is more command, not a value.
       if (quoted && (whole.slice(whole.lastIndexOf('\n', offset) + 1, offset).split(raw[0] ?? '').length - 1) % 2 === 1) return all
       // A name that is only `key` (a React key, a YAML selector) hides a value only when it looks generated.

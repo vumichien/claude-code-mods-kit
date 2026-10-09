@@ -195,10 +195,10 @@ describe('content detector', () => {
       'PWD=/home/me/projects/acme',
       "h(Box, { key: 'plan-meter-band' })",
       'SSH_KEY=~/.ssh/id_ed25519_deploy',
-      // A value someone already masked, a key inside a quoted grep pattern, an attribute assigned in code.
-      `  - Token: demo_${'*'.repeat(32)}`,
-      "grep '^HF_TOKEN=' .env | cut -d= -f2- | tr -d '\\n' | wc -c",
-      'tok.pad_token = tok.eos_token',
+      // A value someone already masked, a key inside a quoted search pattern, an attribute assigned in code.
+      `"clientSecret": "cs_9f2a${'*'.repeat(16)}"`,
+      'rg -c "API_SECRET=" deploy/*.ini && echo "found"',
+      'self.api_key = config.service_key',
     ].join('\n')
     await bare($, on, () => bashResult(stdout))
     const out = await run($, 'cat src/settings.py')
@@ -279,6 +279,7 @@ describe('Edit and Write with a marker', () => {
     const out: any = await $.tool.call({ tool: 'Edit', file_path: FILE, old_string: 'LLM_API_KEY=‹hidden: LLM_API_KEY›\nMODE=dev', new_string: 'LLM_API_KEY=‹hidden: LLM_API_KEY›\nMODE=prod' } as any)
     expect(seen.calls[0].old_string).toBe(`LLM_API_KEY=${KEY}\nMODE=dev`)
     expect(seen.calls[0].new_string).toBe(`LLM_API_KEY=${KEY}\nMODE=prod`)
+    expect(seen.log).toContain(`put 1 hidden values back into ${FILE}`)
     // What comes back is scrubbed again.
     expect(JSON.stringify(out)).not.toContain(KEY)
   })
@@ -336,6 +337,8 @@ describe('Edit and Write with a marker', () => {
     const seen = await startSession($, on, { 'C:/ws/.env': ENV, [doc]: 'Shown as ‹hidden: LLM_API_KEY› in results.\n' }, () => bashResult('ok'))
     await $.tool.call({ tool: 'Edit', file_path: doc, old_string: 'Shown as ‹hidden: LLM_API_KEY› in results.', new_string: 'Shown as ‹hidden: LLM_API_KEY› in tool results.' } as any)
     expect(seen.calls[0].new_string).toBe('Shown as ‹hidden: LLM_API_KEY› in tool results.')
+    // Nothing was put back, so nothing is logged as put back.
+    expect(seen.log.some((line: unknown) => String(line).startsWith('put '))).toBe(false)
   })
 
   test('known and unknown markers in one Write: the value is restored, the text stays', async ($, on) => {

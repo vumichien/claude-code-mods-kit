@@ -2,7 +2,7 @@ import type { Register } from 'claude-code'
 
 import { namesProtectedFile, refusal } from './commands'
 import { DEFAULT_SECRET_FILES, findSecretFiles, isProtectedName, parseFileRules } from './files'
-import { MARKER, Vault, failClosed, fill, mergeSecrets, nameSet, parseEnv, resolveMarkers } from './secrets'
+import { MARKER, Vault, failClosed, fill, marker, mergeSecrets, nameSet, parseEnv, resolveMarkers } from './secrets'
 import type { Secret } from './secrets'
 
 // The input fields a person's first rule would look at for a file name.
@@ -189,7 +189,9 @@ export const register: Register = (on, options) => {
       const values = resolveMarkers(writer.texts, fileText, label => vault.values(label))
       if (values === undefined) return { deny: RESTORE_TEXT(e.tool, writer.path) }
       call = writer.fill(values) as unknown as typeof e
-      if (values.size > 0) $.ui.log(`put ${values.size} hidden values back into ${writer.path}`)
+      // A marker the file holds as text stays text: only the values put back are counted.
+      const restored = [...values].filter(([label, value]) => value !== marker(label)).length
+      if (restored > 0) $.ui.log(`put ${restored} hidden values back into ${writer.path}`)
     }
 
     const ran = await next(call)
