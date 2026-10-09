@@ -212,6 +212,19 @@ export const register: Register = (on, options) => {
     return failClosed(next.called, next.error.kind)
   })
 
+  // What the engine attaches on its own never passes tool.call: a file read before a compaction (attached again,
+  // read fresh from disk), a file changed on disk, an @-mentioned file, a settings hook's output. Scrub it too.
+  on('prompt.attachment', async ($, e, next) => {
+    const below = await next(e)
+    if (mode === 'command' || typeof below.text !== 'string') return below
+    const found = new Set<string>()
+    const text = vault.scrubText(below.text, found)
+    if (found.size === 0) return below
+    hidden += found.size
+    report($, hidden, found, `a ${e.type} attachment`)
+    return { ...below, text }
+  }).catch(() => ({ text: null }))
+
   // A message to another agent or session (SendMessage) leaves this conversation: scrub it the same way.
   on('session.send', async ($, e, next) => {
     if (mode === 'command') return next(e)

@@ -43,6 +43,7 @@ export async function startSession($: any, on: any, env: EnvText | Record<string
   on('session.start', ($: any, e: any) => ({ cwd: e.cwd }))
   on('command.run', () => ({ text: 'no hook answered' }))
   on('prompt.context', ($: any, e: any) => ({ blocks: e.blocks }))
+  on('prompt.attachment', ($: any, e: any) => ({ text: e.text }))
   on('session.send', ($: any, e: any) => { host.sent.push(e.text); return { isDelivered: true } })
   await $.session.start({ cwd: 'C:/ws/project', surface: null, isInteractive: false })
   return host

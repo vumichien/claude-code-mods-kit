@@ -342,6 +342,24 @@ describe('messages sent out', () => {
   })
 })
 
+describe('attachments the engine adds on its own', () => {
+  test('a file attached again after a compaction is scrubbed', async ($, on) => {
+    const seen = await start($, on, () => bashResult(''))
+    const out: any = await $.prompt.attachment({ type: 'file', origin: { kind: 'engine' }, text: `Contents of app.conf:
+LLM_API_KEY=${KEY}
+MODE=prod` } as any)
+    expect(out.text).not.toContain(KEY)
+    expect(out.text).toContain('LLM_API_KEY=‹hidden: LLM_API_KEY›')
+    expect(seen.log).toContain('hid LLM_API_KEY from a file attachment')
+  })
+
+  test('an attachment with nothing secret passes unchanged', async ($, on) => {
+    await start($, on, () => bashResult(''))
+    const out: any = await $.prompt.attachment({ type: 'todo_reminder', origin: { kind: 'engine' }, text: 'The task list is empty.' } as any)
+    expect(out.text).toBe('The task list is empty.')
+  })
+})
+
 describe('command mode', () => {
   test('denies cat .env', { options: { mode: 'command' } }, async ($, on) => {
     let ran = false
