@@ -174,7 +174,7 @@ export const register: Register = (on, options) => {
 
     if (loading !== 'ready') return { deny: 'secret-guard has not loaded the env files, so this call was not run' }
     if (SHELLS.has(e.tool)) {
-      const why = refusal(typeof input.command === 'string' ? input.command : '', isProtected)
+      const why = refusal(typeof input.command === 'string' ? input.command : '', isProtected, label => vault.values(label).length > 0)
       if (why !== undefined) return { deny: why }
     }
     let call = e
@@ -189,7 +189,7 @@ export const register: Register = (on, options) => {
       const values = resolveMarkers(writer.texts, fileText, label => vault.values(label))
       if (values === undefined) return { deny: RESTORE_TEXT(e.tool, writer.path) }
       call = writer.fill(values) as unknown as typeof e
-      $.ui.log(`put ${values.size} hidden values back into ${writer.path}`)
+      if (values.size > 0) $.ui.log(`put ${values.size} hidden values back into ${writer.path}`)
     }
 
     const ran = await next(call)

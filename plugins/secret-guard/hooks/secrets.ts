@@ -90,14 +90,17 @@ export const MARKER = /‹hidden: ([^›\n]{1,100})›/g
 
 // Values that name or point at a secret rather than hold one: `$VAR`, `${{ secrets.X }}`, `<your key>`, a type.
 const NOT_A_VALUE = new Set(['true', 'false', 'null', 'none', 'nil', 'undefined', 'string', 'number', 'boolean', 'unknown', 'object'])
-export function isSecretLiteral(value: string): boolean {
+// `bare`: the value stood unquoted in the text, where code names a variable rather than a literal.
+export function isSecretLiteral(value: string, bare = false): boolean {
   if (value.length < MIN_SECRET_LEN || NOT_A_VALUE.has(value.toLowerCase())) return false
   if (/^[$%<‹@]|^\{\{|^#\{/.test(value)) return false
   // A path to a key file is not the key: ~/.ssh/id_rsa, ./certs/app.pem, C:\keys\app.p12.
   if (/^(~|\.{1,2})[\\/]|^[A-Za-z]:[\\/]/.test(value)) return false
   if (/\$\{|\$\(|process\.env|os\.environ|getenv|ENV\[/.test(value)) return false
-  // A mask someone already put there: ********, xxxxxxxx, ........
-  return !/^([*xX.•])\1*$/.test(value)
+  // An unquoted attribute in code, not a literal: `tok.pad_token = tok.eos_token`. Generated values hold digits.
+  if (bare && /^[A-Za-z_]+(\.[A-Za-z_]+)+$/.test(value)) return false
+  // A mask someone already put there: ********, xxxxxxxx, ........, or a kept prefix and a masked rest (sk_****).
+  return !/^([*xX.•])\1*$/.test(value) && !/[*•]{4,}$/.test(value)
 }
 
 // A detected value is hidden everywhere else in the session only when it looks generated (long, letters and
@@ -174,7 +177,10 @@ export class Vault {
     text = text.replace(KEYED, (all, quote: string, key: string, sep: string, raw: string, offset: number, whole: string) => {
       const quoted = /^["']/.test(raw)
       const value = quoted ? raw.slice(1, -1) : raw
-      if (!isSecretKey(key, this.rule) || !isSecretLiteral(value)) return all
+      if (!isSecretKey(key, this.rule) || !isSecretLiteral(value, !quoted)) return all
+      // A key inside a quoted string (`grep 'TOKEN=' .env | cut -d= -f2-`): the quote after it closes that
+      // string, and what follows up to the next quote is more command, not a value.
+      if (quoted && (whole.slice(whole.lastIndexOf('\n', offset) + 1, offset).split(raw[0] ?? '').length - 1) % 2 === 1) return all
       // A name that is only `key` (a React key, a YAML selector) hides a value only when it looks generated.
       if (/^keys?$/i.test(key) && !looksGenerated(value)) return all
       const after = whole.slice(offset + all.length)
@@ -287,12 +293,15 @@ export function fill(text: string, values: ReadonlyMap<string, string>): string 
 
 // The value behind each marker in an Edit or Write, when the target file settles it: each value must already be
 // in the file (restoring, never spreading), and every old_string must then match the file. Undefined when a
-// marker has no such value or could stand for several.
+// marker has no such value or could stand for several. A marker whose label stands for no value secret-guard
+// knows (a document quoting the format) is plain text and stays as written; so does a marker the file already
+// holds as text.
 export function resolveMarkers(texts: readonly { text: string; isOld: boolean }[], fileText: string, values: (label: string) => readonly string[]): Map<string, string> | undefined {
   const labels = [...new Set(texts.flatMap(t => [...t.text.matchAll(MARKER)].map(m => m[1] ?? '')))]
+    .filter(label => values(label).length > 0)
   let combos: Map<string, string>[] = [new Map()]
   for (const label of labels) {
-    const candidates = values(label).filter(v => fileText.includes(v))
+    const candidates = [...values(label), marker(label)].filter(v => fileText.includes(v))
     combos = combos.flatMap(c => candidates.map(v => new Map([...c, [label, v]])))
     if (combos.length > 64) return undefined
   }

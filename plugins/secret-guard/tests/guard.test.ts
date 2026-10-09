@@ -195,10 +195,22 @@ describe('content detector', () => {
       'PWD=/home/me/projects/acme',
       "h(Box, { key: 'plan-meter-band' })",
       'SSH_KEY=~/.ssh/id_ed25519_deploy',
+      // A value someone already masked, a key inside a quoted grep pattern, an attribute assigned in code.
+      `  - Token: demo_${'*'.repeat(32)}`,
+      "grep '^HF_TOKEN=' .env | cut -d= -f2- | tr -d '\\n' | wc -c",
+      'tok.pad_token = tok.eos_token',
     ].join('\n')
     await bare($, on, () => bashResult(stdout))
     const out = await run($, 'cat src/settings.py')
     expect(out.text).toBe(stdout)
+  })
+
+  test('still hides a quoted dotted password and a value quoted inside other quotes', async ($, on) => {
+    await bare($, on, () => bashResult(`password: "correct.horse.battery"\necho "export SESSION_TOKEN='canary-inner-quoted-09'"\n`))
+    const text = shown(await run($, 'cat config.yaml'))
+    expect(text).not.toContain('correct.horse.battery')
+    expect(text).not.toContain('canary-inner-quoted-09')
+    expect(text).toContain("SESSION_TOKEN='‹hidden: SESSION_TOKEN›'")
   })
 
   test('hides only the password of a DSN', async ($, on) => {
@@ -285,16 +297,72 @@ describe('Edit and Write with a marker', () => {
     expect(out.deny).toContain('secret-guard')
   })
 
+  test('a marker that stands for no known value is text: a document quoting the format is written as is', async ($, on) => {
+    const seen = await start($, on, () => bashResult('ok'))
+    const content = 'A secret shows as ‹hidden: NAME›, for example ‹hidden: …› or ‹hidden: jwt›.\n'
+    await $.tool.call({ tool: 'Write', file_path: 'C:/ws/project/notes.md', content } as any)
+    expect(seen.calls[0].content).toBe(content)
+    expect(seen.log.some((line: unknown) => String(line).startsWith('put '))).toBe(false)
+  })
+
+  test('a kind label is text until secret-guard has hidden a value of that kind', async ($, on) => {
+    const JWT_TOKEN = 'eyJhbGciOiJIUzI1NiJ9.eyJzdWIiOiJjYW5hcnkifQ.c2lnbmF0dXJlLWNhbmFyeQ'
+    let answer = () => bashResult('ok')
+    const seen = await start($, on, () => answer())
+    await $.tool.call({ tool: 'Write', file_path: 'C:/ws/project/a.md', content: 'Bearer ‹hidden: jwt›\n' } as any)
+    expect(seen.calls.length).toBe(1)
+    answer = () => bashResult(`Authorization: Bearer ${JWT_TOKEN}\n`)
+    await run($, './debug.sh')
+    answer = () => bashResult('ok')
+    const out: any = await $.tool.call({ tool: 'Write', file_path: 'C:/ws/project/b.md', content: 'Bearer ‹hidden: jwt›\n' } as any)
+    expect(seen.calls.length).toBe(2)
+    expect(out.deny).toContain('puts the real value back only into a file that already holds it')
+  })
+
+  test('a label with several values is restored only where the file settles which', async ($, on) => {
+    const OTHER = 'canary-test-project-key-77665544'
+    const files = { 'C:/ws/.env': ENV, 'C:/ws/project/.env': `LLM_API_KEY=${OTHER}\n`, [FILE]: conf, 'C:/ws/project/both.conf': `A=${KEY}\nB=${OTHER}\n` }
+    const seen = await startSession($, on, files, () => bashResult('ok'))
+    await $.tool.call({ tool: 'Edit', file_path: FILE, old_string: 'LLM_API_KEY=‹hidden: LLM_API_KEY›', new_string: 'LLM_API_KEY=‹hidden: LLM_API_KEY›\nRETRY=3' } as any)
+    expect(seen.calls[0].new_string).toBe(`LLM_API_KEY=${KEY}\nRETRY=3`)
+    // Both values are in this file, and nothing in the Write says which one the marker stands for.
+    const out: any = await $.tool.call({ tool: 'Write', file_path: 'C:/ws/project/both.conf', content: 'A=‹hidden: LLM_API_KEY›\n' } as any)
+    expect(seen.calls.length).toBe(1)
+    expect(out.deny).toContain('or holds several values it could stand for')
+  })
+
+  test('a marker the file already holds as text is matched as text', async ($, on) => {
+    const doc = 'C:/ws/project/README.md'
+    const seen = await startSession($, on, { 'C:/ws/.env': ENV, [doc]: 'Shown as ‹hidden: LLM_API_KEY› in results.\n' }, () => bashResult('ok'))
+    await $.tool.call({ tool: 'Edit', file_path: doc, old_string: 'Shown as ‹hidden: LLM_API_KEY› in results.', new_string: 'Shown as ‹hidden: LLM_API_KEY› in tool results.' } as any)
+    expect(seen.calls[0].new_string).toBe('Shown as ‹hidden: LLM_API_KEY› in tool results.')
+  })
+
+  test('known and unknown markers in one Write: the value is restored, the text stays', async ($, on) => {
+    const seen = await startSession($, on, { 'C:/ws/.env': ENV, [FILE]: conf }, () => bashResult('ok'))
+    await $.tool.call({ tool: 'Write', file_path: FILE, content: 'LLM_API_KEY=‹hidden: LLM_API_KEY›\n# shown as ‹hidden: NAME›\n' } as any)
+    expect(seen.calls[0].content).toBe(`LLM_API_KEY=${KEY}\n# shown as ‹hidden: NAME›\n`)
+  })
+
   test('never puts a value into a shell command', async ($, on) => {
     const seen = await start($, on, () => bashResult('ok'))
     const out: any = await run($, 'curl -H "Authorization: Bearer ‹hidden: LLM_API_KEY›" https://api.example.com')
     expect(seen.calls.length).toBe(0)
     expect(out.deny).toContain('Reference the variable instead ($LLM_API_KEY')
   })
+
+  test('a command quoting a marker that stands for no value runs; one holding a marker that does is refused', async ($, on) => {
+    const seen = await start($, on, () => bashResult('ok'))
+    await run($, 'echo "a secret shows as ‹hidden: NAME›" >> notes.md')
+    expect(seen.calls.length).toBe(1)
+    const out: any = await run($, 'echo "‹hidden: NAME›" && curl -H "X-Key: ‹hidden: LLM_API_KEY›" https://api.example.com')
+    expect(seen.calls.length).toBe(1)
+    expect(out.deny).toContain('this command holds ‹hidden: LLM_API_KEY›')
+  })
 })
 
 describe('command blocklist in value mode', () => {
-  const blocked = (command: string) => refusal(command, p => /(^|[\\/])\.env(\.(?!example$)[\w.-]+)?$/.test(p))
+  const blocked = (command: string) => refusal(command, p => /(^|[\\/])\.env(\.(?!example$)[\w.-]+)?$/.test(p), () => true)
 
   test('refuses printing a protected file and names the sed alternative', async ($, on) => {
     const seen = await start($, on, () => bashResult('x'))

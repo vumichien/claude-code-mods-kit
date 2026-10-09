@@ -36,9 +36,10 @@ const SSM_TEXT = 'secret-guard: this prints a decrypted SSM parameter. Capture i
 const SECRETS_MANAGER_TEXT = 'secret-guard: this prints a secret from Secrets Manager. Capture it without printing it, VALUE=$(aws secretsmanager get-secret-value --secret-id NAME --query SecretString --output text), or redirect it to a file, then report only whether it worked.'
 const KUBECTL_TEXT = "secret-guard: this prints a Kubernetes Secret's data. Redirect it to a file (> secret.yaml), or see its key names and sizes only: kubectl describe secret NAME."
 
-// Why a value-mode command is refused, or undefined to let it run.
-export function refusal(command: string, isProtected: IsProtected): string | undefined {
-  const label = new RegExp(MARKER.source).exec(command)?.[1]
+// Why a value-mode command is refused, or undefined to let it run. `hasValue` says whether a marker's label stands
+// for a value secret-guard knows; a marker that stands for none is plain text (a document quoting the format).
+export function refusal(command: string, isProtected: IsProtected, hasValue: (label: string) => boolean): string | undefined {
+  const label = [...command.matchAll(MARKER)].map(m => m[1] ?? '').find(hasValue)
   if (label !== undefined) return MARKER_TEXT(label)
   for (const statement of command.split(/\r?\n|;|&&|\|\|/)) {
     const hidden = redirected(statement) || captured(statement)
