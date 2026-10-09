@@ -25,7 +25,7 @@
     "secretKeys": {
       "type": "string",
       "title": "Secret keys",
-      "description": "Comma-separated key names to treat as secrets on top of the built-in rule (a part of the name is PASS, PASSWORD, PW, SECRET, TOKEN, KEY, DSN, CREDENTIAL or PRIVATE).",
+      "description": "Comma-separated key names to treat as secrets on top of the built-in rule (a part of the name is PASS, PASSWD, PASSWORD, PW, PWD, SECRET, TOKEN, KEY, DSN, CREDENTIAL or PRIVATE).",
       "default": ""
     },
     "identifierKeys": {
