@@ -479,6 +479,29 @@ describe('edge cases', () => {
     expect((await runCommand($, 'secret-guard')).text).toBe('mode command: refuses any call whose command or path names a protected env file, except to load it; values are not read')
   })
 
+  test('a file that cannot be parsed is skipped and named; the other files stay protected', async ($, on) => {
+    const BAD = 'canary-test-bad-file-value-66ee'
+    const seen = await startSession($, on, {
+      'C:/ws/project/.env.rds': `RDS_PASSWORD="${BAD}`,
+      'C:/ws/.env': ENV,
+    }, () => bashResult(`${KEY}
+`))
+    const out = await run($, './check.sh')
+    expect(out.text).toBeUndefined()
+    expect(JSON.stringify(out)).toContain('‹hidden: LLM_API_KEY›')
+    const warning = seen.status.find(t => String(t).includes('skipped'))
+    expect(warning).toContain('C:/ws/project/.env.rds')
+    expect(warning).toContain('a quoted value that does not close')
+    const reply = (await runCommand($, 'secret-guard')).text
+    expect(reply).toContain('protects 2 values from C:/ws/.env')
+    expect(reply).toContain('skipped C:/ws/project/.env.rds (unsupported .env syntax on line 1')
+    const context: any = await $.prompt.context({ blocks: [] })
+    expect(context.blocks[0].text).toContain('could not parse C:/ws/project/.env.rds')
+    // A skipped file is still one secret-guard will not print.
+    expect((await run($, 'cat .env.rds')).deny).toContain('prints a protected env file')
+    for (const text of [JSON.stringify(seen), reply, context.blocks[0].text]) expect(text).not.toContain(BAD)
+  })
+
   test('a quoted value that does not close is refused, not guessed', () => {
     expect(() => parseEnv('A_KEY="opens-and-never-closes', NO_RULE)).toThrow()
   })

@@ -66,6 +66,9 @@ export const register: Register = (on, options) => {
   // value mode refuses every call: a guard that silently loaded nothing would pass every value through.
   let loading: 'pending' | 'ready' | 'failed' = 'pending'
   let loadError = ''
+  // Files that were read but could not be parsed: skipped, the rest still protected. Name and reason only.
+  const skipped: { file: string; reason: string }[] = []
+  const skippedText = () => skipped.map(s => `${s.file} (${s.reason})`).join(', ')
   // Results withheld because the check itself failed (the .catch below).
   let withheld = 0
   // The context block was built before the files were loaded, so it is rebuilt once they are.
@@ -87,9 +90,13 @@ export const register: Register = (on, options) => {
       ? 'secret-guard is loading the env files of this session.'
       : envPaths.length === 0
         ? 'secret-guard found no env file above this session.'
-        : `secret-guard protects the secrets in ${envPaths.join(', ')}. Protected keys (names only): ${shown || 'none'}.`
+        : `secret-guard protects the secrets in ${envPaths.filter(p => !skipped.some(s => s.file === p)).join(', ') || 'no file'}. Protected keys (names only): ${shown || 'none'}.`
+    const warning = skipped.length > 0
+      ? [`secret-guard could not parse ${skippedText()}, so it does not protect the values in that file. Tell the user; never print that file.`]
+      : []
     return [
       head,
+      ...warning,
       'In tool results a secret shows as ‹hidden: NAME›, where NAME is its key or a kind (jwt, private-key, dsn-password, aws-secret-access-key, k8s-secret). It is a placeholder, not the value: never put it in a command. In an Edit or Write, secret-guard puts the real value back only into a file that already holds it.',
       use,
       never,
@@ -112,13 +119,21 @@ export const register: Register = (on, options) => {
       // the workspace .env above it. The two starts usually share their upper folders, so each is looked at once.
       envPaths.push(...await findSecretFiles(dir => $.fs.list(dir), [e.cwd, await $.session.root()], fileRules, home))
       const lists: Secret[][] = []
+      skipped.length = 0
       for (const file of envPaths) {
         current = file
-        lists.push(parseEnv(String(await $.fs.read(file)), rule))
+        // A file that cannot be read fails the load; one that cannot be parsed is skipped and named.
+        const text = String(await $.fs.read(file))
+        try {
+          lists.push(parseEnv(text, rule))
+        } catch (err) {
+          skipped.push({ file, reason: err instanceof Error ? err.message : 'unknown error' })
+        }
       }
       fileSecrets = mergeSecrets(lists)
       vault = new Vault(fileSecrets, rule)
       loading = 'ready'
+      if (skipped.length > 0) $.ui.status(`secret-guard: skipped ${skippedText()}; its values are not protected`)
     } catch (err) {
       loading = 'failed'
       loadError = err instanceof Error ? err.message : 'unknown error'
@@ -144,7 +159,9 @@ export const register: Register = (on, options) => {
     const counts = `${hidden} values hidden this session${withheld > 0 ? `; ${withheld} results withheld because they could not be checked` : ''}`
     if (envPaths.length === 0) return { text: `mode value; no env file found above this session; values that look like secrets are still hidden; ${counts}` }
     const names = [...new Set(fileSecrets.map(s => s.name))].join(', ') || 'none'
-    return { text: `mode value; protects ${fileSecrets.length} values from ${envPaths.join(', ')}: ${names}; ${counts}` }
+    const files = envPaths.filter(p => !skipped.some(s => s.file === p)).join(', ') || 'no file'
+    const skips = skipped.length > 0 ? `; skipped ${skippedText()}, its values are not protected` : ''
+    return { text: `mode value; protects ${fileSecrets.length} values from ${files}: ${names}${skips}; ${counts}` }
   })
 
   on('tool.call', async ($, e, next) => {
