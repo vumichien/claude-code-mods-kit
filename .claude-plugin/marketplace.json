@@ -4,7 +4,7 @@
     "name": "Chien Vu Minh"
   },
   "metadata": {
-    "description": "Four small Claude Code mods: hide secrets from tool results, see how far your plan is, get warned when a task is marked done with untested code, and see what fills the context window and when the prompt cache expires."
+    "description": "Eight small Claude Code mods, each with its own on/off switch: hide secrets from tool results, see how far your plan is, get warned when a task is marked done with untested code, see what fills the context window, park ideas while Claude works, see your other sessions, enhance a rough prompt, and review the guesses Claude made."
   },
   "plugins": [
     {
@@ -36,6 +36,38 @@
       "source": "./plugins/context-meter",
       "description": "A band above the prompt with what fills the context window, by category, a countdown to when the prompt cache expires, and a Compact button. Starts off: /context-meter on turns it on",
       "version": "0.3.0",
+      "license": "MIT",
+      "category": "productivity"
+    },
+    {
+      "name": "idea-shelf",
+      "source": "./plugins/idea-shelf",
+      "description": "Park an idea while Claude works, without interrupting it: /idea <text>, or the shelf's own box. Ideas are kept per project across sessions, and Send puts one in the prompt box when you are ready. Starts off: /idea-shelf on turns it on",
+      "version": "0.1.0",
+      "license": "MIT",
+      "category": "productivity"
+    },
+    {
+      "name": "session-monitor",
+      "source": "./plugins/session-monitor",
+      "description": "See your other Claude Code sessions from this one: which are working, which wait for you, which are done, and which share this folder. Each session writes a small heartbeat file; nothing else is shared. Starts off: /session-monitor on turns it on",
+      "version": "0.1.0",
+      "license": "MIT",
+      "category": "productivity"
+    },
+    {
+      "name": "prompt-enhancer",
+      "source": "./plugins/prompt-enhancer",
+      "description": "An Enhance button above the prompt: Haiku rewrites your draft to name the skills that fit, the questions Claude should ask first and what done looks like. It never submits; Send does. Starts off: /prompt-enhancer on turns it on",
+      "version": "0.1.0",
+      "license": "MIT",
+      "category": "productivity"
+    },
+    {
+      "name": "assumption-check",
+      "source": "./plugins/assumption-check",
+      "description": "After a turn that edited files or ran commands, Haiku lists the choices Claude made that you did not state. Mark each right or wrong, add a note, and send the corrections back as one prompt. Starts off: /assumption-check on turns it on",
+      "version": "0.1.0",
       "license": "MIT",
       "category": "productivity"
     }
