@@ -269,6 +269,26 @@ describe('content detector', () => {
   })
 })
 
+describe('structured results that only mention secrets', () => {
+  test('an answer keyed by a question that mentions a key is not hidden', async ($, on) => {
+    // AskUserQuestion's record keys each answer by its question text.
+    const answers = {
+      'Which API key should the new mods use?': 'Approve the plan as written',
+      'Should secret-guard start on (token, password and key values hidden)?': 'Yes, start it on',
+    }
+    const record = { questions: [], answers }
+    await bare($, on, () => ({ result: record, text: 'answered' }))
+    const out: any = await $.tool.call({ tool: 'AskUserQuestion', questions: [] } as any)
+    expect(out.result).toEqual(record)
+  })
+
+  test('a value under a field name with a secret word is still hidden', async ($, on) => {
+    await bare($, on, () => ({ result: { 'db.password': 'canary-db-pass-2026', 'X-Api-Key': 'canary-header-value' }, text: 'ok' }))
+    const out: any = await $.tool.call({ tool: 'mcp__demo__config', query: 'q' } as any)
+    expect(JSON.stringify(out.result)).not.toContain('canary-')
+  })
+})
+
 describe('Edit and Write with a marker', () => {
   const FILE = 'C:/ws/project/app.conf'
   const conf = `LLM_API_KEY=${KEY}\nMODE=dev\n`

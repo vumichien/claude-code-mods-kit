@@ -11,7 +11,7 @@
       "name": "secret-guard",
       "source": "./plugins/secret-guard",
       "description": "Hides secrets in tool results before Claude reads them: the secret values of every .env and .env.* from your session's folder up to the drive root, and anything that looks like a secret; tells Claude how to use them without printing them",
-      "version": "0.3.2",
+      "version": "0.3.3",
       "license": "MIT",
       "category": "productivity"
     },

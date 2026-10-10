@@ -121,6 +121,9 @@ const AWS_KEY_ID = /\b(?:AKIA|ASIA)[0-9A-Z]{16}\b/
 // A 40-character secret access key on the same line as an access key id (a credentials CSV, a log line).
 const AWS_SECRET = /(?<![A-Za-z0-9/+=])[A-Za-z0-9/+]{40}(?![A-Za-z0-9/+=])/g
 
+// An object key that names a field (`apiKey`, `db.password`, `X-Api-Key`), as KEYED's keys do: no spaces.
+const KEY_NAME = /^[A-Za-z_][\w.-]*$/
+
 // Holds every value secret-guard knows (the env files', and ones it found in results) in memory only, and
 // hides them. `found` collects the names of what was hidden.
 export class Vault {
@@ -247,13 +250,15 @@ export class Vault {
   }
 
   // Every string in a tool's result: object keys stay (the result keeps its shape), a value under a secret
-  // key (`{ "apiKey": "..." }` from an MCP tool) is hidden whole.
+  // key (`{ "apiKey": "..." }` from an MCP tool) is hidden whole. Only a key shaped like a name counts: a key
+  // that is a sentence (AskUserQuestion keys each answer by its question, "Which API key should I use?") is
+  // text, and the answer under it is not a secret because the question mentions one.
   scrub(value: unknown, found: Set<string>): unknown {
     if (typeof value === 'string') return this.scrubText(value, found)
     if (Array.isArray(value)) return value.map(v => this.scrub(v, found))
     if (value !== null && typeof value === 'object') {
       return Object.fromEntries(Object.entries(value).map(([k, v]) => {
-        if (typeof v === 'string' && isSecretKey(k, this.rule) && isSecretLiteral(v) && !v.includes('‹hidden: ')) {
+        if (typeof v === 'string' && KEY_NAME.test(k) && isSecretKey(k, this.rule) && isSecretLiteral(v) && !v.includes('‹hidden: ')) {
           found.add(k)
           this.remember(k, v, looksGenerated(v))
           return [k, marker(k)]
