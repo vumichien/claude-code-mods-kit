@@ -1,0 +1,11 @@
+{
+  "name": "assumption-check",
+  "version": "0.1.0",
+  "description": "After a turn that edited files or ran commands, Haiku lists the choices Claude made that you did not state. Mark each right or wrong, add a note, and send the corrections back as one prompt. Starts off: /assumption-check on turns it on",
+  "author": {
+    "name": "Chien Vu Minh"
+  },
+  "license": "MIT",
+  "homepage": "https://github.com/vumichien/claude-code-mods-kit",
+  "types": "./types/index.d.ts"
+}
