@@ -1,0 +1,11 @@
+{
+  "name": "idea-shelf",
+  "version": "0.1.0",
+  "description": "Park an idea while Claude works, without interrupting it: /idea <text>, or the shelf's own box. Ideas are kept per project across sessions, and Send puts one in the prompt box when you are ready. Starts off: /idea-shelf on turns it on",
+  "author": {
+    "name": "Chien Vu Minh"
+  },
+  "license": "MIT",
+  "homepage": "https://github.com/vumichien/claude-code-mods-kit",
+  "types": "./types/index.d.ts"
+}
