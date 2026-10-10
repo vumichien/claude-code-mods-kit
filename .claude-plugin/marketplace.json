@@ -51,7 +51,7 @@
       "name": "session-monitor",
       "source": "./plugins/session-monitor",
       "description": "See your other Claude Code sessions from this one: which are working, which wait for you, which are done, and which share this folder. Each session writes a small heartbeat file; nothing else is shared. Starts off: /session-monitor on turns it on",
-      "version": "0.1.0",
+      "version": "0.1.1",
       "license": "MIT",
       "category": "productivity"
     },
@@ -67,7 +67,7 @@
       "name": "assumption-check",
       "source": "./plugins/assumption-check",
       "description": "After a turn that edited files or ran commands, Haiku lists the choices Claude made that you did not state. Mark each right or wrong, add a note, and send the corrections back as one prompt. Starts off: /assumption-check on turns it on",
-      "version": "0.1.0",
+      "version": "0.1.1",
       "license": "MIT",
       "category": "productivity"
     }

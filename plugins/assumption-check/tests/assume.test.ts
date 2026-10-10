@@ -18,12 +18,12 @@ const MESSAGES = [
 ]
 
 // The session beneath the plugin. replies: what the model answers, in order. box: the prompt box.
-// calls: every $ call that calls the model, reads, fills or submits the box, by event name.
-type Host = { replies: string[]; asked: string[]; box: string; submitted: { text: string; asUser?: boolean }[]; calls: string[] }
+// calls: every $ call that calls the model, reads, fills or submits the box, by event name. panes: the open panes' ids.
+type Host = { replies: string[]; asked: string[]; box: string; submitted: { text: string; asUser?: boolean }[]; calls: string[]; panes: Set<string> }
 
 // stored: what the plugin's store holds as the session starts ({ enabled: true } is an earlier /assumption-check on).
 async function start($: any, on: any, stored: Record<string, unknown> = { enabled: true }) {
-  const host: Host = { replies: [FOUND], asked: [], box: '', submitted: [], calls: [] }
+  const host: Host = { replies: [FOUND], asked: [], box: '', submitted: [], calls: [], panes: new Set() }
   const clock = mock.clock(on, { now: 1_000 })
   mock.store(on, stored)
   on('session.root', () => ({ value: ROOT }))
@@ -54,10 +54,17 @@ async function start($: any, on: any, stored: Record<string, unknown> = { enable
       return { value: undefined }
     })
   }
-  on('ui.open', () => {
+  on('ui.open', ($: any, e: any) => {
     host.calls.push('ui.open')
-    return { value: { isOpen: true } }
+    host.panes.add(e.id)
+    return { value: { isPlaced: true } }
   })
+  on('ui.close', ($: any, e: any) => {
+    host.calls.push('ui.close')
+    host.panes.delete(e.id)
+    return { value: undefined }
+  })
+  on('ui.panes', () => ({ value: [...host.panes].map(id => ({ id, title: id, isShown: true, isFocused: false, isPlaced: true })) }))
   on('tool.call', () => ({ result: {}, text: 'ok' }))
   on('turn.start', ($: any, e: any) => ({ turnId: e.turnId }))
   on('turn.complete', ($: any, e: any) => ({ text: e.answer }))
@@ -144,6 +151,24 @@ describe('assumption-check', () => {
     await turn($, clock, ['Edit'])
     expect(host.calls.filter(c => c === 'model.complete')).toHaveLength(4)
     expect(await bandText($)).toBe("assumptions ▸ could not read Haiku's answer as a list ")
+  })
+
+  test("the band's Review opens the review and then reads Hide, which closes it; the review's Close closes it too", async ($, on) => {
+    const { host, clock } = await start($, on)
+    await turn($, clock, ['Write'])
+    const band = () => $.ui.mount({ plugin: 'assumption-check', surface: 'terminal', component: 'AbovePrompt', props: BAND })
+    const label = async () => (await (await band()).find({ key: 'review' }))?.props.label
+    expect(await label()).toBe('Review')
+    await (await band()).press({ key: 'review' })
+    expect([...host.panes]).toEqual(['assumption-check'])
+    expect(await label()).toBe('Hide')
+    await (await band()).press({ key: 'review' })
+    expect([...host.panes]).toEqual([])
+    expect(await label()).toBe('Review')
+    await (await band()).press({ key: 'review' })
+    await (await review($)).press({ key: 'close' })
+    expect([...host.panes]).toEqual([])
+    expect(await label()).toBe('Review')
   })
 
   test('Wrong with a note, then Send corrections: the prompt goes into the box; Send submits it once Claude is idle', async ($, on) => {

@@ -11,6 +11,8 @@ const PANE = 'session-monitor'
 const enabled = atom({ plugin: 'session-monitor', key: 'enabled' } as const, false)
 const others = atom({ plugin: 'session-monitor', key: 'others' } as const, [] as Beat[])
 const now = atom({ plugin: 'session-monitor', key: 'now' } as const, 0)
+// Whether the list's pane is open, so that the band's button reads List or Hide.
+const isOpen = atom({ plugin: 'session-monitor', key: 'isOpen' } as const, false)
 
 // This session as its heartbeat describes it. `base`: working from a turn's start to its end, else done.
 // `asking`: the tool calls now waiting for the person (a permission dialog, a question); any makes it waiting.
@@ -89,7 +91,24 @@ async function finish($: any, s: Session): Promise<void> {
 
 async function openList($: any): Promise<void> {
   // Panes draw only in the terminal and the desktop app; elsewhere the command's line is the answer.
-  await $.ui.open({ id: PANE, title: 'Sessions', closeOnEscape: true }).catch(() => undefined)
+  const opened = await $.ui.open({ id: PANE, title: 'Sessions', closeOnEscape: true }).catch(() => undefined)
+  if (opened !== undefined) await update($, isOpen, () => true)
+}
+
+async function closeList($: any): Promise<void> {
+  await $.ui.close({ id: PANE }).catch(() => undefined)
+  await update($, isOpen, () => false)
+}
+
+// The engine's record of open panes, not the atom: a pane closed by an unload never told this module.
+async function isListUp($: any): Promise<boolean> {
+  return (await $.ui.panes().catch(() => [])).some((pane: { id: string }) => pane.id === PANE)
+}
+
+// The band's button: a press on an open list closes it, on a closed one opens it.
+async function toggleList($: any): Promise<void> {
+  if (await isListUp($)) await closeList($)
+  else await openList($)
 }
 
 function summary(list: readonly Beat[]): string {
@@ -111,6 +130,9 @@ export const register: Register = on => {
     s.timer = undefined
     const isOn = storedSwitch(await $.store.get(STORE_KEY).catch(() => undefined), false)
     await update($, enabled, () => isOn)
+    // A reload keeps a pane that was up: the band's button starts from the engine's record.
+    const isUp = await isListUp($)
+    await update($, isOpen, () => isUp)
     if (isOn) s.timer = await begin($, s)
     return next(e)
   })
@@ -197,6 +219,14 @@ export const register: Register = on => {
     return next(e)
   })
 
+  // A close by the person (Escape, the engine's own close mark or key) turns the band's button back
+  // to List; this module's own closes set it themselves. An observer: the close goes on as it came.
+  on('ui.close', { id: PANE }, async ($, e, next) => {
+    const done = await next(e)
+    await update($, isOpen, () => false)
+    return done
+  }).catch(($, e, next) => next(e))
+
   on('ui.render', { component: 'AbovePrompt' }, async ($, e, next) => {
     const below = await next(e)
     if (!(await read($, enabled))) return below
@@ -206,13 +236,14 @@ export const register: Register = on => {
     const n = counts(list)
     const rest = (['working', 'done'] as const).filter(k => n[k] > 0).map(k => `${n[k]} ${k}`)
     const here = alsoHere(list, s.folder).slice(0, 3)
+    const shown = await read($, isOpen)
     return (
       <Box flexDirection="column">
         <Box>
           <Text dimColor>{'other sessions ▸ '}</Text>
           {n.waiting > 0 && <Text color="warning" bold>{`${n.waiting} waiting${rest.length > 0 ? ' · ' : ' '}`}</Text>}
           {rest.length > 0 && <Text dimColor>{`${rest.join(' · ')} `}</Text>}
-          <Button key="list" label="List" hotkey="s" onPress={() => openList($)} />
+          <Button key="list" label={shown ? 'Hide' : 'List'} hotkey="s" onPress={() => toggleList($)} />
         </Box>
         {here.map(b => (
           <Text key={`here-${b.id}`} wrap="truncate" {...(b.state === 'waiting' ? { color: 'warning' } : { dimColor: true })}>
@@ -225,14 +256,26 @@ export const register: Register = on => {
   })
 
   on('ui.render', { component: 'Pane', requestId: PANE }, async ($, e) => {
-    const { Box, Text } = $.ui.resolve(e)
-    if (!(await read($, enabled))) return <Text dimColor>{switchText('session-monitor', false)}</Text>
+    const { Box, Button, Text } = $.ui.resolve(e)
+    // A desktop draws the dismiss Button as its own close mark at the pane's edge; the terminal as a button.
+    const close = <Button key="close" label="Close" role="dismiss" onPress={() => closeList($)} />
+    if (!(await read($, enabled))) {
+      return (
+        <Box>
+          <Text dimColor>{`${switchText('session-monitor', false)} `}</Text>
+          {close}
+        </Box>
+      )
+    }
     const list = await read($, others)
     const at = await read($, now)
     const here = new Set(alsoHere(list, s.folder).map(b => b.id))
     return (
       <Box flexDirection="column">
-        <Text bold>{`Sessions · ${summary(list)}`}</Text>
+        <Box>
+          <Text bold wrap="truncate">{`Sessions · ${summary(list)} `}</Text>
+          {close}
+        </Box>
         {list.map(b => (
           <Text key={`row-${b.id}`} wrap="truncate" {...(b.state === 'waiting' ? { color: 'warning' } : {})}>
             {`${folderName(b.folder)} · "${b.title}" · ${b.state} ${ago(at - b.since)}${here.has(b.id) ? ' · this folder' : ''}`}

@@ -11,7 +11,8 @@ const PANE_PROPS = { title: 'Sessions', isFocused: true, bodyColumns: 100, place
 
 // The heartbeat folder beneath the plugin: each file's text and when it was last written. calls: every $ call
 // that writes, reads, lists or draws, by event name. inCall: the session's own state while a tool call runs.
-type Host = { files: Record<string, string>; mtimes: Record<string, number>; calls: string[]; verdict: string; inCall: string[] }
+// panes: the open panes' ids.
+type Host = { files: Record<string, string>; mtimes: Record<string, number>; calls: string[]; verdict: string; inCall: string[]; panes: Set<string> }
 
 // The engine hands a Windows path over with backslashes; the host keeps forward slashes.
 const norm = (p: string) => p.split('\\').join('/')
@@ -21,7 +22,7 @@ const beat = (id: string, folder: string, state: string, updatedAt: number, titl
 
 // stored: what the plugin's store holds as the session starts ({ enabled: true } is an earlier /session-monitor on).
 async function start($: any, on: any, stored: Record<string, unknown> = { enabled: true }) {
-  const host: Host = { files: {}, mtimes: {}, calls: [], verdict: 'allow', inCall: [] }
+  const host: Host = { files: {}, mtimes: {}, calls: [], verdict: 'allow', inCall: [], panes: new Set() }
   const clock = mock.clock(on, { now: NOW })
   mock.store(on, stored)
   mock.env(on, { USERPROFILE: HOME })
@@ -48,10 +49,17 @@ async function start($: any, on: any, stored: Record<string, unknown> = { enable
       return { value: undefined }
     })
   }
-  on('ui.open', () => {
+  on('ui.open', ($: any, e: any) => {
     host.calls.push('ui.open')
-    return { value: { isOpen: true } }
+    host.panes.add(e.id)
+    return { value: { isPlaced: true } }
   })
+  on('ui.close', ($: any, e: any) => {
+    host.calls.push('ui.close')
+    host.panes.delete(e.id)
+    return { value: undefined }
+  })
+  on('ui.panes', () => ({ value: [...host.panes].map(id => ({ id, title: id, isShown: true, isFocused: false, isPlaced: true })) }))
   on('session.id', () => ({ value: 'self' }))
   on('session.root', () => ({ value: ROOT }))
   on('command.register', ($: any, e: any) => ({ value: { command: e.name } }))
@@ -184,6 +192,27 @@ describe('session-monitor', () => {
     expect(host.calls).toContain('ui.open')
     const ui = await $.ui.mount({ plugin: 'session-monitor', surface: 'terminal', component: 'Pane', requestId: 'session-monitor', props: PANE_PROPS })
     expect((await ui.find({ type: 'Text', text: /^app ·/ }))?.text).toBe('app · "task b" · waiting 45s · this folder')
+  })
+
+  test("the band's List opens the list and then reads Hide, which closes it; the list's Close closes it too", async ($, on) => {
+    const { host, clock } = await start($, on)
+    host.files[`${DIR}/b.json`] = beat('b', ROOT, 'done', NOW)
+    host.mtimes[`${DIR}/b.json`] = NOW
+    await clock.advance(15_000)
+    const mount = () => $.ui.mount({ plugin: 'session-monitor', surface: 'terminal', component: 'AbovePrompt', props: BAND })
+    const label = async () => (await (await mount()).find({ key: 'list' }))?.props.label
+    expect(await label()).toBe('List')
+    await (await mount()).press({ key: 'list' })
+    expect([...host.panes]).toEqual(['session-monitor'])
+    expect(await label()).toBe('Hide')
+    await (await mount()).press({ key: 'list' })
+    expect([...host.panes]).toEqual([])
+    expect(await label()).toBe('List')
+    await (await mount()).press({ key: 'list' })
+    const pane = await $.ui.mount({ plugin: 'session-monitor', surface: 'terminal', component: 'Pane', requestId: 'session-monitor', props: PANE_PROPS })
+    await pane.press({ key: 'close' })
+    expect([...host.panes]).toEqual([])
+    expect(await label()).toBe('List')
   })
 
   test('the mod starts off; on starts the heartbeat, off marks the file ended and stops it', async ($, on) => {

@@ -9,6 +9,7 @@ declare module 'claude-code' {
   interface PluginState {
     // enabled: the mod's on/off switch as this session read it from the store, or as /session-monitor on|off set it.
     // others: the other sessions still open, as the last read of their files found them. now: when that read ran.
-    'session-monitor': { enabled: boolean; others: Beat[]; now: number }
+    // isOpen: the list's pane is open.
+    'session-monitor': { enabled: boolean; others: Beat[]; now: number; isOpen: boolean }
   }
 }

@@ -15,6 +15,8 @@ const notice = atom({ plugin: 'assumption-check', key: 'notice' } as const, null
 const lastCost = atom({ plugin: 'assumption-check', key: 'lastCost' } as const, null as string | null)
 const isFilled = atom({ plugin: 'assumption-check', key: 'isFilled' } as const, false)
 const round = atom({ plugin: 'assumption-check', key: 'round' } as const, 0)
+// Whether the review's pane is open, so that the band's button reads Review or Hide.
+const isOpen = atom({ plugin: 'assumption-check', key: 'isOpen' } as const, false)
 
 // This turn as the hooks saw it. `changed`: calls of the main loop that edited a file or ran a command.
 // `isBusy`: a turn of the main loop runs, so nothing is submitted. `notes`: the review's notes by item, kept
@@ -64,7 +66,24 @@ async function collect($: any, s: Session): Promise<void> {
 
 async function openReview($: any): Promise<void> {
   // Panes draw only in the terminal and the desktop app; elsewhere the command's line is the answer.
-  await $.ui.open({ id: PANE, title: 'Assumptions', focus: true, closeOnEscape: true }).catch(() => undefined)
+  const opened = await $.ui.open({ id: PANE, title: 'Assumptions', focus: true, closeOnEscape: true }).catch(() => undefined)
+  if (opened !== undefined) await update($, isOpen, () => true)
+}
+
+async function closeReview($: any): Promise<void> {
+  await $.ui.close({ id: PANE }).catch(() => undefined)
+  await update($, isOpen, () => false)
+}
+
+// The engine's record of open panes, not the atom: a pane closed by an unload never told this module.
+async function isReviewUp($: any): Promise<boolean> {
+  return (await $.ui.panes().catch(() => [])).some((pane: { id: string }) => pane.id === PANE)
+}
+
+// The band's button: a press on an open review closes it, on a closed one opens it.
+async function toggleReview($: any): Promise<void> {
+  if (await isReviewUp($)) await closeReview($)
+  else await openReview($)
 }
 
 async function mark($: any, n: number, value: 'right' | 'wrong'): Promise<void> {
@@ -116,6 +135,9 @@ export const register: Register = on => {
       .catch(() => undefined)
     const isOn = storedSwitch(await $.store.get(STORE_KEY).catch(() => undefined), false)
     await update($, enabled, () => isOn)
+    // A reload keeps a pane that was up: the band's button starts from the engine's record.
+    const isUp = await isReviewUp($)
+    await update($, isOpen, () => isUp)
     return next(e)
   })
 
@@ -164,6 +186,14 @@ export const register: Register = on => {
     return done
   }).catch(($, e, next) => next(e))
 
+  // A close by the person (Escape, the engine's own close mark or key) turns the band's button back
+  // to Review; this module's own closes set it themselves. An observer: the close goes on as it came.
+  on('ui.close', { id: PANE }, async ($, e, next) => {
+    const done = await next(e)
+    await update($, isOpen, () => false)
+    return done
+  }).catch(($, e, next) => next(e))
+
   on('ui.render', { component: 'AbovePrompt' }, async ($, e, next) => {
     const below = await next(e)
     if (!(await read($, enabled)) || e.props.hasSurvey) return below
@@ -173,13 +203,14 @@ export const register: Register = on => {
     if (!busy && list.length === 0 && said === null) return below
     const { Box, Button, Text } = $.ui.resolve(e)
     const open = list.filter(i => i.mark === null).length
+    const shown = await read($, isOpen)
     return (
       <Box flexDirection="column">
         <Box>
           <Text dimColor wrap="truncate">
             {busy ? 'assumptions ▸ checking the last turn… ' : list.length > 0 ? `assumptions ▸ ${open} to check ` : `assumptions ▸ ${said} `}
           </Text>
-          {list.length > 0 && <Button key="review" label="Review" hotkey="a" onPress={() => openReview($)} />}
+          {list.length > 0 && <Button key="review" label={shown ? 'Hide' : 'Review'} hotkey="a" onPress={() => toggleReview($)} />}
         </Box>
         {below}
       </Box>
@@ -191,14 +222,26 @@ export const register: Register = on => {
     const { Box, Button, Text } = ui
     // Mobile draws no text field: there the review marks and sends, without notes.
     const Input = 'Input' in ui ? ui.Input : undefined
-    if (!(await read($, enabled))) return <Text dimColor>{switchText('assumption-check', false)}</Text>
+    // A desktop draws the dismiss Button as its own close mark at the pane's edge; the terminal as a button.
+    const close = <Button key="close" label="Close" role="dismiss" onPress={() => closeReview($)} />
+    if (!(await read($, enabled))) {
+      return (
+        <Box>
+          <Text dimColor>{`${switchText('assumption-check', false)} `}</Text>
+          {close}
+        </Box>
+      )
+    }
     const list = await read($, items)
     const said = await read($, notice)
     const filled = await read($, isFilled)
     const r = await read($, round)
     return (
       <Box flexDirection="column">
-        <Text bold>{`Assumptions in the last turn · ${list.length}`}</Text>
+        <Box>
+          <Text bold wrap="truncate">{`Assumptions in the last turn · ${list.length} `}</Text>
+          {close}
+        </Box>
         {/* At the top, so that a list taller than the pane never hides it. */}
         {list.length > 0 && (
           <Box>
