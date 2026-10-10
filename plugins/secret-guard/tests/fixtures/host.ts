@@ -1,3 +1,5 @@
+import { mock } from 'claude-code/testing'
+
 // The host beneath secret-guard in a test: a workspace whose root holds the given .env, a tool whose
 // answer each test sets, and the status and log lines the mod writes. Every stub is registered before
 // the test's first $ call, as the kit requires, then the session starts.
@@ -8,9 +10,11 @@ export type Host = { status: unknown[]; log: unknown[]; calls: any[]; sent: stri
 
 // env is the text of C:/ws/.env, or a map from path to text for several files. A text given as an
 // Error makes that read fail, as an unreadable file would. HOME is C:/home/me.
+// stored: what secret-guard's store holds as the session starts (an earlier /secret-guard off: { enabled: false }).
 type EnvText = string | Error
-export async function startSession($: any, on: any, env: EnvText | Record<string, EnvText>, answer: (e: any) => unknown): Promise<Host> {
+export async function startSession($: any, on: any, env: EnvText | Record<string, EnvText>, answer: (e: any) => unknown, stored: Record<string, unknown> = {}): Promise<Host> {
   const host: Host = { status: [], log: [], calls: [], sent: [], answer }
+  mock.store(on, stored)
   const files: Record<string, EnvText> = typeof env === 'string' || env instanceof Error ? { 'C:/ws/.env': env } : env
   // The host hands paths back with either separator.
   const norm = (path: string) => path.replace(/\\/g, '/').replace(/(.)\/+$/, '$1')

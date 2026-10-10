@@ -10,32 +10,32 @@
     {
       "name": "secret-guard",
       "source": "./plugins/secret-guard",
-      "description": "Hides secrets in tool results before Claude reads them: the secret values of every .env and .env.* from your session's folder up to the drive root, and anything that looks like a secret; tells Claude how to use them without printing them",
-      "version": "0.3.3",
+      "description": "Hides secrets in tool results before Claude reads them: the secret values of every .env and .env.* from your session's folder up to the drive root, and anything that looks like a secret (KEY=VALUE under a secret name, passwords in URLs, private keys, JWTs, AWS keys, Kubernetes Secrets); tells Claude how to use them without printing them",
+      "version": "0.4.0",
       "license": "MIT",
       "category": "productivity"
     },
     {
       "name": "plan-meter",
       "source": "./plugins/plan-meter",
-      "description": "A band above the prompt with how far your plan file is (phases and steps done, what is in progress, what is next) and Claude's own task list",
-      "version": "0.1.0",
+      "description": "A band above the prompt with how far your plan file is (phases and steps done, what is in progress, what is next) and Claude's own task list, kept current as files change. Starts off: /plan-meter on turns it on",
+      "version": "0.3.0",
       "license": "MIT",
       "category": "productivity"
     },
     {
       "name": "done-gate",
       "source": "./plugins/done-gate",
-      "description": "Warns Claude and you when a task is marked done while code it changed has not been tested since; a band shows the last test run. It never blocks",
-      "version": "0.1.0",
+      "description": "Notices when Claude marks a task done while code it changed has not been tested since, and tells Claude and you; a band shows the last test run. It warns, it never blocks. Starts off: /done-gate on turns it on",
+      "version": "0.3.0",
       "license": "MIT",
       "category": "productivity"
     },
     {
       "name": "context-meter",
       "source": "./plugins/context-meter",
-      "description": "A band above the prompt with what fills the context window, by category, a countdown to when the prompt cache expires, and a Compact button",
-      "version": "0.1.5",
+      "description": "A band above the prompt with what fills the context window, by category, a countdown to when the prompt cache expires, and a Compact button. Starts off: /context-meter on turns it on",
+      "version": "0.3.0",
       "license": "MIT",
       "category": "productivity"
     }

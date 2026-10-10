@@ -7,16 +7,22 @@ const BAND = { hasSurvey: false, isWorking: false, maxRows: 10, bodyColumns: 200
 
 // What the stubbed engine answers per command: exit status by pattern; everything else succeeds.
 // `wait`, when set, holds a Bash call open until the test lets it finish. `refuseUpdates` answers TaskUpdate with a failure.
-type Host = { failing: RegExp | null; background: boolean; wait?: Promise<void>; refuseUpdates?: boolean; output?: string; hidden?: boolean }
+// `off` starts the mod as it ships, off; otherwise the store holds an earlier `/done-gate on`. `calls` collects every
+// $ call that writes, draws or calls the model, by event name.
+type Host = { failing: RegExp | null; background: boolean; wait?: Promise<void>; refuseUpdates?: boolean; output?: string; off?: boolean; calls?: string[] }
 
 // Every stub sits beneath the plugin and is registered before the first $ call.
 async function start($: any, on: any, host: Host = { failing: null, background: false }) {
   const clock = mock.clock(on, { now: 1_000_000 })
+  mock.store(on, host.off === true ? {} : { enabled: true })
   let todos: unknown[] = []
   let tasks = 0
+  for (const name of ['fs.write', 'ui.toast', 'ui.status', 'ui.log', 'model.complete']) on(name, () => {
+    host.calls?.push(name)
+    return { value: undefined }
+  })
   on('session.root', () => ({ value: ROOT }))
   on('command.register', ($: any, e: any) => ({ value: { command: e.name } }))
-  on('ui.toast', () => ({ value: undefined }))
   on('tool.call', async ($: any, e: any) => {
     if (e.tool === 'Bash') {
       if (host.wait !== undefined) await host.wait
@@ -42,8 +48,6 @@ async function start($: any, on: any, host: Host = { failing: null, background: 
   on('ui.render', ($: any, e: any) => h($.ui.resolve(e).Box, { key: 'engine-band' }))
   await $.session.start({ cwd: ROOT, surface: 'terminal', isInteractive: true })
   await clock.settle()
-  // As a person would; a test of the hidden band leaves it as the session starts it.
-  if (host.hidden !== true) await $.command.run({ command: 'done-gate', args: 'on' })
   return clock
 }
 
@@ -218,21 +222,40 @@ describe('done-gate', () => {
     expect(await bandText($)).toBe('done-gate ▸ tests ✔ passed 0 s ago')
   })
 
-  test('the band is hidden until /done-gate on; hidden, Claude still gets the note', async ($, on) => {
-    await start($, on, { failing: null, background: false, hidden: true })
+  test('the mod starts off; /done-gate on turns it on, for the next session too; /done-gate off stops it', async ($, on) => {
+    const clock = await start($, on, { failing: null, background: false, off: true })
+    const run = (args: string) => ($ as any).command.run({ command: 'done-gate', args })
+    expect((await run('')).text).toBe('off (/done-gate on turns it on)')
+    expect((await run('on')).text).toBe('on (/done-gate off turns it off)')
     await edit($, 'src/export.py')
-    expect(await bandText($)).toBeUndefined()
     expect(((await complete($)) as any).context?.[0]).toContain('"Add the export" was marked done')
-    expect((await ($ as any).command.run({ command: 'done-gate', args: 'on' })).text).toBe('band on (/done-gate off hides it)')
     expect(await bandText($)).toBe('done-gate ▸ no test run yet · 1 file changed since · warned 1×')
-    await ($ as any).command.run({ command: 'done-gate', args: 'off' })
+    // The switch is kept in the store: a new session starts on.
+    await $.session.start({ cwd: ROOT, surface: 'terminal', isInteractive: true })
+    await clock.settle()
+    expect((await run('status')).text).toContain('on · done-gate ▸')
+    expect((await run('off')).text).toBe('off (/done-gate on turns it on)')
     expect(await bandText($)).toBeUndefined()
   })
 
-  test('the band option shows it from the start', { options: { band: 'on' } }, async ($, on) => {
-    await start($, on, { failing: null, background: false, hidden: true })
+  test('off, every hook passes its event on unchanged: no note for Claude, nothing written or drawn', async ($, on) => {
+    const calls: string[] = []
+    await start($, on, { failing: null, background: false, off: true, calls })
+    expect(await edit($, 'src/export.py')).toEqual({ result: {}, text: 'ok' })
+    expect(await bash($, 'pytest -q')).toEqual({ result: { stdout: '', stderr: '', interrupted: false }, text: 'ok' })
+    const created: any = await $.tool.call({ tool: 'TaskCreate', subject: 'Add the export', description: 'x' })
+    expect(created).toEqual({ result: { task: { id: '1', subject: 'Add the export' } }, text: 'ok' })
+    const done: any = await $.tool.call({ tool: 'TaskUpdate', taskId: '1', status: 'completed' })
+    expect(done).toEqual({ result: { success: true, taskId: '1', updatedFields: ['status'], statusChange: { from: 'in_progress', to: 'completed' } }, text: 'ok' })
+    expect(await bandText($)).toBeUndefined()
+    expect(calls).toEqual([])
+  })
+
+  test('band off: the mod is on and Claude gets its note, but no band is drawn', { options: { band: 'off' } }, async ($, on) => {
+    await start($, on)
     await edit($, 'src/export.py')
-    expect(await bandText($)).toBe('done-gate ▸ no test run yet · 1 file changed since')
+    expect(((await complete($)) as any).context?.[0]).toContain('"Add the export" was marked done')
+    expect(await bandText($)).toBeUndefined()
   })
 
   test('/done-gate lists the changed files and the last test command', async ($, on) => {
@@ -241,7 +264,7 @@ describe('done-gate', () => {
     await edit($, 'src/a.py')
     await edit($, 'src/b.ts')
     const reply = await ($ as any).command.run({ command: 'done-gate', args: '' })
-    expect(reply.text).toBe('done-gate ▸ tests ✘ failed 0 s ago · 2 files changed since\nlast test command: pytest tests/test_api.py\nchanged since: src/a.py, src/b.ts')
+    expect(reply.text).toBe('on · done-gate ▸ tests ✘ failed 0 s ago · 2 files changed since\nlast test command: pytest tests/test_api.py\nchanged since: src/a.py, src/b.ts')
   })
 
   for (const surface of ['terminal', 'desktop'] as const) {

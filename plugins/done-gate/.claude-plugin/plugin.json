@@ -1,7 +1,7 @@
 {
   "name": "done-gate",
-  "version": "0.2.0",
-  "description": "Notices when Claude marks a task done while code it changed has not been tested since, and tells Claude and you; a band shows the last test run. It warns, it never blocks",
+  "version": "0.3.0",
+  "description": "Notices when Claude marks a task done while code it changed has not been tested since, and tells Claude and you; a band shows the last test run. It warns, it never blocks. Starts off: /done-gate on turns it on",
   "author": {
     "name": "Chien Vu Minh"
   },
@@ -24,8 +24,8 @@
     "band": {
       "type": "string",
       "title": "Band above the prompt",
-      "description": "off: the band stays hidden until you type /done-gate on, and /done-gate off hides it again. on: the band shows from the start. Either way the mod keeps working; this changes only what is drawn.",
-      "default": "off",
+      "description": "on: the band shows while the mod is on. off: the mod works without a band (Claude still gets its note, and /done-gate answers). /done-gate on and off switch the whole mod, for every session.",
+      "default": "on",
       "options": [
         "off",
         "on"

@@ -1,7 +1,7 @@
 {
   "name": "plan-meter",
-  "version": "0.2.0",
-  "description": "A band above the prompt with how far your plan file is (phases and steps done, what is in progress, what is next) and Claude's own task list, kept current as files change",
+  "version": "0.3.0",
+  "description": "A band above the prompt with how far your plan file is (phases and steps done, what is in progress, what is next) and Claude's own task list, kept current as files change. Starts off: /plan-meter on turns it on",
   "author": {
     "name": "Chien Vu Minh"
   },
@@ -24,8 +24,8 @@
     "band": {
       "type": "string",
       "title": "Band above the prompt",
-      "description": "off: the band stays hidden until you type /plan-meter on, and /plan-meter off hides it again. on: the band shows from the start. Either way the mod keeps working; this changes only what is drawn.",
-      "default": "off",
+      "description": "on: the band shows while the mod is on. off: the mod works without a band, and /plan-meter answers with the plan's progress. /plan-meter on and off switch the whole mod, for every session.",
+      "default": "on",
       "options": [
         "off",
         "on"

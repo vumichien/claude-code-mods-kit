@@ -5,6 +5,7 @@ import type { ClaudeTask, PlanMeter } from '../types'
 import { bar, line, parsePlan, percent, summarize } from './parse'
 import type { Parsed } from './parse'
 import { candidates, caseless, dirname, relativeTo, resolvePath, samePath, segmentTest } from './paths'
+import { STORE_KEY, storedSwitch, switchText, switchWord } from './toggle'
 
 const PANE = 'plan-meter'
 const DEFAULT_PLANS = 'plans/*/plan.md,PLAN.md,plan.md,TODO.md,TASKS.md,ROADMAP.md,todo.txt,TODO.org'
@@ -12,10 +13,9 @@ const EDIT_TOOLS = ['Edit', 'Write', 'MultiEdit', 'NotebookEdit']
 const ZERO = { done: 0, active: 0, todo: 0, total: 0 }
 const meter = atom({ plugin: 'plan-meter', key: 'meter' } as const, null)
 const tasks = atom({ plugin: 'plan-meter', key: 'tasks' } as const, [] as ClaudeTask[])
-// The band shows only when asked: `/plan-meter on` shows it and `/plan-meter off` hides it, for this session; until
-// then the `band` option decides. Hiding it changes the drawing only: the plan is still read and /plan-meter still answers.
-const shown = atom({ plugin: 'plan-meter', key: 'shown' } as const, null)
-const SWITCH: Record<string, boolean> = { on: true, off: false }
+// The switch as this session read it (toggle.ts). Off, every hook passes its event on unchanged: no plan is read,
+// no timer runs and nothing is drawn. The mod starts off; `/plan-meter on` turns it on for every session.
+const enabled = atom({ plugin: 'plan-meter', key: 'enabled' } as const, false)
 
 type Setup = { root: string; patterns: string[]; chosen: string | undefined; watched: string[] }
 
@@ -84,6 +84,14 @@ async function refresh($: any, setup: Setup): Promise<PlanMeter> {
   return found.meter
 }
 
+// Starts the meter: reads the plan now, then again every `everyMs` to catch edits made outside Claude Code, such
+// as the plan open in your editor. The timer is returned so that turning the mod off can stop it.
+async function begin($: any, setup: Setup, everyMs: number): Promise<{ cancel: () => void }> {
+  setup.root = await $.session.root()
+  await refresh($, setup)
+  return $.clock.every(everyMs, () => void refresh($, setup))
+}
+
 // Claude's task list after one of its task tools ran: TodoWrite replaces it, TaskCreate adds, TaskUpdate changes.
 async function trackTasks($: any, tool: string, input: Record<string, any>, result: any): Promise<void> {
   if (tool === 'TodoWrite' && Array.isArray(input.todos)) {
@@ -108,40 +116,49 @@ export const register: Register = (on, options) => {
   const setup: Setup = { root: '', patterns: candidates(options.plan ?? DEFAULT_PLANS), chosen: undefined, watched: [] }
   if (setup.patterns.length === 0) setup.patterns = candidates(DEFAULT_PLANS)
   const everyMs = Math.max(5, Number(options.refreshSeconds ?? 15)) * 1000
+  // The re-read timer, while the mod is on. session.start can fire again in one load (a reload): one timer is enough.
+  let ticking: { cancel: () => void } | undefined
 
   on('session.start', async ($, e, next) => {
-    // Not /plan: Claude Code has a built-in of that name, and a refused name must not stop the plan being read.
+    // Not /plan: Claude Code has a built-in of that name, and a refused name must not stop the meter starting.
+    // The command is registered even when the mod is off, so that it can be turned on.
     await $.command
       .register({
         name: 'plan-meter',
-        description: "Show the plan's progress (/plan-meter <path> picks a file; /plan-meter on or off shows or hides the band)",
-        argumentHint: '[on|off|<path>]',
+        description: "Show the plan's progress (/plan-meter on or off switches the mod; /plan-meter <path> picks a file)",
+        argumentHint: '[on|off|status|<path>]',
       })
       .catch(() => undefined)
-    setup.root = await $.session.root()
-    await refresh($, setup)
-    // Catches edits made outside Claude Code too, such as the plan open in your editor.
-    $.clock.every(everyMs, () => void refresh($, setup))
+    const isOn = storedSwitch(await $.store.get(STORE_KEY).catch(() => undefined), false)
+    await update($, enabled, () => isOn)
+    ticking?.cancel()
+    ticking = isOn ? await begin($, setup, everyMs) : undefined
     return next(e)
   })
 
   on('command.run', { command: 'plan-meter' }, async ($, e) => {
-    const show = SWITCH[e.args.trim().toLowerCase()]
-    if (show !== undefined) {
-      await update($, shown, () => show)
-      return { text: show ? 'band on (/plan-meter off hides it)' : 'band off (/plan-meter on shows it)' }
+    const word = switchWord(e.args)
+    if (word === 'on' || word === 'off') {
+      const isOn = word === 'on'
+      await $.store.set(STORE_KEY, isOn)
+      await update($, enabled, () => isOn)
+      ticking?.cancel()
+      ticking = isOn ? await begin($, setup, everyMs) : undefined
+      return { text: switchText('plan-meter', isOn) }
     }
-    if (e.args.trim() !== '') setup.chosen = resolvePath(setup.root, e.args)
+    if (!(await read($, enabled))) return { text: switchText('plan-meter', false) }
+    if (word === undefined) setup.chosen = resolvePath(setup.root, e.args)
     const found = await refresh($, setup)
     // Panes draw only in the terminal and the desktop app; under claude -p the line below is the answer.
     await $.ui.open({ id: PANE, title: 'Plan', focus: true, closeOnEscape: true }).catch(() => undefined)
     const list = await read($, tasks)
     const done = list.filter(t => t.status === 'completed').length
-    return { text: list.length > 0 ? `${line(found)} · Claude's tasks ${done}/${list.length}` : line(found) }
+    return { text: `on · ${list.length > 0 ? `${line(found)} · Claude's tasks ${done}/${list.length}` : line(found)}` }
   })
 
   // An observer, not a guard: whatever goes wrong here, the tool's own answer is returned as it came.
   on('tool.call', async ($, e, next) => {
+    if (!(await read($, enabled))) return next(e)
     const ran = await next(e)
     if (ran.deny !== undefined || ran.isError) return ran
     try {
@@ -162,7 +179,7 @@ export const register: Register = (on, options) => {
 
   on('ui.render', { component: 'AbovePrompt' }, async ($, e, next) => {
     const below = await next(e)
-    if (!((await read($, shown)) ?? options.band === 'on')) return below
+    if (!(await read($, enabled)) || options.band === 'off') return below
     const now = await read($, meter)
     const list = await read($, tasks)
     // A project with no plan and no task list gets no band at all.
@@ -183,6 +200,8 @@ export const register: Register = (on, options) => {
 
   on('ui.render', { component: 'Pane', requestId: PANE }, async ($, e) => {
     const { Box, Text } = $.ui.resolve(e)
+    // A pane left open when the mod was turned off.
+    if (!(await read($, enabled))) return <Text dimColor>{switchText('plan-meter', false)}</Text>
     const now = await read($, meter)
     const list = await read($, tasks)
     const width = Math.max(10, Math.min(30, e.props.bodyColumns - 30))

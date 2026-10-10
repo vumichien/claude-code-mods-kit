@@ -2,6 +2,7 @@ import { atom, read, update } from 'claude-code'
 import type { Register } from 'claude-code'
 
 import { bar, cacheTtl, cacheView, fade, legend, tokens, toReading, withOverride } from './meter'
+import { STORE_KEY, storedSwitch, switchText, switchWord } from './toggle'
 
 const reading = atom({ plugin: 'context-meter', key: 'reading' } as const, null)
 const cache = atom({ plugin: 'context-meter', key: 'cache' } as const, { lastAt: null })
@@ -9,15 +10,9 @@ const cache = atom({ plugin: 'context-meter', key: 'cache' } as const, { lastAt:
 const now = atom({ plugin: 'context-meter', key: 'now' } as const, 0)
 const onSubscription = atom({ plugin: 'context-meter', key: 'onSubscription' } as const, false)
 const notice = atom({ plugin: 'context-meter', key: 'notice' } as const, null)
-// The band shows only when asked: `/context-meter` flips it, `/context-meter on` or `off` sets it, for this session;
-// until then the `band` option decides. Hiding it changes the drawing only: the window is still measured and the
-// cache clock still runs, so the band is current the moment it comes back.
-const shown = atom({ plugin: 'context-meter', key: 'shown' } as const, null)
-const SWITCH: Record<string, boolean> = { on: true, off: false }
-
-async function isShown($: any, band: unknown): Promise<boolean> {
-  return (await read($, shown)) ?? band === 'on'
-}
+// The switch as this session read it (toggle.ts). Off, every hook passes its event on unchanged: the window is not
+// measured, the cache clock does not run and nothing is drawn. The mod starts off; `/context-meter on` turns it on.
+const enabled = atom({ plugin: 'context-meter', key: 'enabled' } as const, false)
 
 type Detail = 'summary' | 'full'
 
@@ -68,6 +63,13 @@ async function stamp($: any, at: number): Promise<void> {
   await update($, now, () => drawnAt)
 }
 
+// Starts the meter: reads the window now and runs the cache clock once a second. The timer is returned so that
+// turning the mod off can stop it.
+async function begin($: any, detail: Detail, ttlOption: unknown): Promise<{ cancel: () => void }> {
+  await measure($, detail).catch(() => undefined)
+  return $.clock.every(1000, () => void tick($, ttlOption).catch(() => undefined))
+}
+
 const reason = (err: unknown) => (err instanceof Error ? err.message : String(err))
 
 // The band's button: the same compaction /compact runs. It is refused while a turn runs or with too few
@@ -108,25 +110,37 @@ export const register: Register = (on, options) => {
 
   on('session.start', async ($, e, next) => {
     const started = await next(e)
-    // `immediate`: a switch for the band works while Claude is still working.
+    // `immediate`: the switch works while Claude is still working. The command is registered even when the mod is
+    // off, so that it can be turned on.
     await $.command
-      .register({ name: 'context-meter', description: 'Show or hide the context and cache band', argumentHint: '[on|off]', immediate: true })
+      .register({ name: 'context-meter', description: 'Show what fills the context window and when the cache expires (/context-meter on or off switches the mod)', argumentHint: '[on|off|status]', immediate: true })
       .catch(() => undefined)
-    await measure($, detail).catch(() => undefined)
+    const isOn = storedSwitch(await $.store.get(STORE_KEY).catch(() => undefined), false)
+    await update($, enabled, () => isOn)
     ticking?.cancel()
-    ticking = $.clock.every(1000, () => void tick($, options.cacheTtl).catch(() => undefined))
+    ticking = isOn ? await begin($, detail, options.cacheTtl) : undefined
     return started
   })
 
   on('command.run', { command: 'context-meter' }, async ($, e) => {
-    const word = e.args.trim().toLowerCase()
-    const show = SWITCH[word] ?? (word === '' ? !(await isShown($, options.band)) : undefined)
-    if (show === undefined) return { text: 'use /context-meter, /context-meter on or /context-meter off' }
-    await update($, shown, () => show)
-    return { text: show ? 'band on (/context-meter off hides it)' : 'band off (/context-meter on shows it)' }
+    const word = switchWord(e.args)
+    if (word === undefined) return { text: 'use /context-meter on, /context-meter off or /context-meter status' }
+    if (word === 'status') {
+      if (!(await read($, enabled))) return { text: switchText('context-meter', false) }
+      const r = await read($, reading)
+      const used = r === null || r.used === null ? '' : ` · context ${tokens(r.used)} of ${tokens(r.window)}${r.percent !== null ? ` (${r.percent}%)` : ''}`
+      return { text: `${switchText('context-meter', true)}${used}` }
+    }
+    const isOn = word === 'on'
+    await $.store.set(STORE_KEY, isOn)
+    await update($, enabled, () => isOn)
+    ticking?.cancel()
+    ticking = isOn ? await begin($, detail, options.cacheTtl) : undefined
+    return { text: switchText('context-meter', isOn) }
   })
 
   on('session.measure', async ($, e, next) => {
+    if (!(await read($, enabled))) return next(e)
     const measured = await next(e)
     await measure($, detail).catch(() => undefined)
     return measured
@@ -137,6 +151,7 @@ export const register: Register = (on, options) => {
   // from the moment it was sent; a request that brought back no usage (failed, interrupted) did not count.
   // A subagent's requests have caches of their own.
   on('turn.step', async function* ($, e, next) {
+    if (!(await read($, enabled))) return yield* next(e)
     const sentAt = await $.clock.now()
     const response = yield* next(e)
     if (e.agentId === undefined && response.usage !== null) await stamp($, sentAt).catch(() => undefined)
@@ -144,6 +159,7 @@ export const register: Register = (on, options) => {
   })
 
   on('turn.complete', async ($, e, next) => {
+    if (!(await read($, enabled))) return next(e)
     const done = await next(e)
     if (e.agentId === undefined) {
       await update($, notice, () => null).catch(() => undefined)
@@ -154,6 +170,7 @@ export const register: Register = (on, options) => {
 
   // /compact and auto-compaction; the band's own button calls compact() and sees its answer there instead.
   on('session.compact', async ($, e, next) => {
+    if (!(await read($, enabled))) return next(e)
     const result = await next(e)
     // An observer: the compaction's result goes back as it came, whatever happens to the band.
     if (e.agentId === undefined && e.trigger !== 'precompute' && result.skip === undefined) await compacted($, detail).catch(() => undefined)
@@ -162,7 +179,7 @@ export const register: Register = (on, options) => {
 
   on('ui.render', { component: 'AbovePrompt' }, async ($, e, next) => {
     const below = await next(e)
-    if (!(await isShown($, options.band))) return below
+    if (!(await read($, enabled)) || options.band === 'off') return below
     const r = await read($, reading)
     if (e.props.hasSurvey || r === null || r.window <= 0) return below
     const { Box, Button, Text } = $.ui.resolve(e)

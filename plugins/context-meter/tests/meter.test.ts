@@ -34,14 +34,25 @@ function context(used = 46_000, live = true) {
   }
 }
 
-// hidden: leave the band as the session starts it (hidden unless the band option is on); otherwise /context-meter on.
-type Host = { usage: () => unknown; rateLimits: unknown[]; compact: () => unknown; toasts: string[]; compacts: number; commands: string[]; hidden: boolean }
+// off: start the mod as it ships, off; otherwise the store holds an earlier `/context-meter on`. calls: every $ call
+// that measures, writes, draws or calls the model, by event name.
+type Host = { usage: () => unknown; rateLimits: unknown[]; compact: () => unknown; toasts: string[]; compacts: number; commands: string[]; off: boolean; calls: string[] }
 
 // Every stub sits beneath the plugin and is registered before the first $ call.
 async function start($: any, on: any, overrides: Partial<Host> = {}) {
-  const host: Host = { usage: () => context(), rateLimits: [], compact: () => ({ messages: SUMMARY }), toasts: [], compacts: 0, commands: [], hidden: false, ...overrides }
+  const host: Host = { usage: () => context(), rateLimits: [], compact: () => ({ messages: SUMMARY }), toasts: [], compacts: 0, commands: [], off: false, calls: [], ...overrides }
   const clk = mock.clock(on, { now: 1_000_000 })
-  on('session.usage', () => ({ value: { startedAt: 0, context: host.usage(), rateLimits: host.rateLimits } }))
+  mock.store(on, host.off ? {} : { enabled: true })
+  for (const name of ['fs.write', 'ui.status', 'ui.log', 'model.complete']) {
+    on(name, () => {
+      host.calls.push(name)
+      return { value: undefined }
+    })
+  }
+  on('session.usage', () => {
+    host.calls.push('session.usage')
+    return { value: { startedAt: 0, context: host.usage(), rateLimits: host.rateLimits } }
+  })
   // The engine fills a compaction's messages from the transcript; here the transcript is empty.
   on('session.messages', () => ({ value: [] }))
   on('session.compact', () => {
@@ -54,6 +65,7 @@ async function start($: any, on: any, overrides: Partial<Host> = {}) {
   })
   on('ui.toast', ($: any, e: any) => {
     host.toasts.push(e.text)
+    host.calls.push('ui.toast')
     return { value: undefined }
   })
   on('turn.complete', ($: any, e: any) => ({ text: e.answer }))
@@ -64,7 +76,6 @@ async function start($: any, on: any, overrides: Partial<Host> = {}) {
   on('ui.render', ($: any, e: any) => h($.ui.resolve(e).Box, { key: 'engine-band' }))
   await $.session.start({ cwd: 'C:/work/app', surface: 'terminal', isInteractive: true })
   await clk.settle()
-  if (!host.hidden) await toggle($, 'on')
   return { clk, host }
 }
 
@@ -281,35 +292,42 @@ describe('context-meter band', () => {
     expect(host.toasts).toEqual(['context-meter: compaction skipped: a PreCompact hook blocked it'])
   })
 
-  test('the band is hidden until /context-meter shows it; the bare command flips it, on and off set it', async ($, on) => {
-    await start($, on, { hidden: true })
+  test('the mod starts off; /context-meter on turns it on, for the next session too; off stops it', async ($, on) => {
+    const { clk } = await start($, on, { off: true })
     expect(await (await band($)).text(/^context/)).toBeUndefined()
-    expect((await toggle($, '')).text).toBe('band on (/context-meter off hides it)')
+    expect((await toggle($, '')).text).toBe('off (/context-meter on turns it on)')
+    expect((await toggle($, 'ON')).text).toBe('on (/context-meter off turns it off)')
     expect(await (await band($)).text(/^context/)).toBe('context ▸ 46k of 200k · 23% · compacts at 167k ')
-    await toggle($, '')
-    expect(await (await band($)).text(/^context/)).toBeUndefined()
-    await toggle($, 'ON')
-    await toggle($, 'on')
+    expect((await toggle($, 'status')).text).toBe('on (/context-meter off turns it off) · context 46k of 200k (23%)')
+    // The switch is kept in the store: a new session starts on.
+    await $.session.start({ cwd: 'C:/work/app', surface: 'terminal', isInteractive: true })
+    await clk.settle()
     expect(await (await band($)).text(/^context/)).toBeDefined()
+    expect((await toggle($, 'off')).text).toBe('off (/context-meter on turns it on)')
+    expect(await (await band($)).text(/^context/)).toBeUndefined()
     expect((await toggle($, 'maybe')).text).toContain('use /context-meter')
   })
 
-  test('while hidden the meter keeps measuring, so the band is current when it comes back', async ($, on) => {
-    let used = 46_000
-    const { clk } = await start($, on, { usage: () => context(used), hidden: true })
-    await turn($)
-    await $.session.compact({ trigger: 'manual', messages: SUMMARY })
-    used = 20_000
-    await clk.advance(1000)
-    await toggle($, 'on')
-    expect(await (await band($)).text(/^context/)).toBe('context ▸ 20k of 200k · 10% · compacts at 167k ')
+  test('off, every hook passes its event on unchanged, and nothing is measured, written or drawn', async ($, on) => {
+    const { clk, host } = await start($, on, { off: true })
+    // The step's own return value, read off the stream's end.
+    const stream = $.turn.step({ turnId: 't1', index: 0, model: 'claude-test', messageCount: 2 })
+    let chunk = await stream.next()
+    while (!chunk.done) chunk = await stream.next()
+    expect(chunk.value).toEqual({ turnId: 't1', index: 0, answer: 'ok', toolUses: [], stopReason: 'end_turn', usage: USAGE })
+    expect(await $.turn.complete({ answer: 'ok', durationMs: 1000, isAborted: false, turnId: 't1', reason: 'answer', usage: USAGE })).toEqual({ text: 'ok' })
+    expect(await $.session.compact({ trigger: 'manual', messages: SUMMARY })).toEqual({ messages: SUMMARY })
+    await clk.advance(5000)
+    expect(await (await band($)).text(/^context/)).toBeUndefined()
+    // The compaction above is the test's own call: the mod made none.
+    expect(host.compacts).toBe(1)
+    expect(host.calls).toEqual([])
   })
 
-  test('the band option shows it from the start', { options: { band: 'on' } }, async ($, on) => {
-    await start($, on, { hidden: true })
-    expect(await (await band($)).text(/^context/)).toBeDefined()
-    await toggle($, 'off')
+  test('band off: the mod measures, and /context-meter status answers, but no band is drawn', { options: { band: 'off' } }, async ($, on) => {
+    await start($, on)
     expect(await (await band($)).text(/^context/)).toBeUndefined()
+    expect((await toggle($, 'status')).text).toContain('context 46k of 200k')
   })
 
   test('while a turn runs there is no button; a short band keeps the fill and the clock only', async ($, on) => {

@@ -1,7 +1,7 @@
 {
   "name": "context-meter",
-  "version": "0.2.0",
-  "description": "A band above the prompt with what fills the context window, by category, a countdown to when the prompt cache expires, and a Compact button",
+  "version": "0.3.0",
+  "description": "A band above the prompt with what fills the context window, by category, a countdown to when the prompt cache expires, and a Compact button. Starts off: /context-meter on turns it on",
   "author": {
     "name": "Chien Vu Minh"
   },
@@ -33,8 +33,8 @@
     "band": {
       "type": "string",
       "title": "Band above the prompt",
-      "description": "off: the band stays hidden until you type /context-meter on, and /context-meter off hides it again. on: the band shows from the start. Either way the mod keeps working; this changes only what is drawn.",
-      "default": "off",
+      "description": "on: the band shows while the mod is on. off: the mod measures without a band, and /context-meter status answers with the reading. /context-meter on and off switch the whole mod, for every session.",
+      "default": "on",
       "options": [
         "off",
         "on"

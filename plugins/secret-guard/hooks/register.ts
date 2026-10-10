@@ -4,6 +4,7 @@ import { namesProtectedFile, refusal } from './commands'
 import { DEFAULT_SECRET_FILES, findSecretFiles, isProtectedName, parseFileRules } from './files'
 import { MARKER, Vault, failClosed, fill, marker, mergeSecrets, nameSet, parseEnv, resolveMarkers } from './secrets'
 import type { Secret } from './secrets'
+import { STORE_KEY, storedSwitch, switchWord } from './toggle'
 
 // The input fields a person's first rule would look at for a file name.
 const INPUT_FIELDS = ['command', 'file_path', 'path', 'pattern', 'glob'] as const
@@ -49,6 +50,9 @@ function report($: { ui: { status: (text: string) => unknown; log: (text: string
   for (const name of found) $.ui.log(`hid ${name} from ${where}`)
 }
 
+// Said in the status line for as long as the guard is off, so that nobody forgets it.
+const OFF_STATUS = 'secret-guard OFF: secrets not hidden'
+
 const RESTORE_TEXT = (tool: string, path: string) => `secret-guard: this ${tool} holds ‹hidden: …›, a placeholder for a secret value. secret-guard puts the real value back only into a file that already holds it, and ${path || 'the target file'} does not, or holds several values it could stand for. Edit around the value (pick an old_string without the placeholder), or write the file with a command that reads the value from its env file without printing it.`
 
 export const register: Register = (on, options) => {
@@ -73,6 +77,10 @@ export const register: Register = (on, options) => {
   let withheld = 0
   // The context block was built before the files were loaded, so it is rebuilt once they are.
   let contextStale = false
+  // The switch (toggle.ts). The guard starts on; `/secret-guard off` turns it off for every session, and then each
+  // hook passes its event on unchanged: nothing is hidden or refused and Claude gets no note. The env files are
+  // still read at the start, so that `/secret-guard on` protects at once.
+  let isOn = true
 
   const isProtected = (path: string) => {
     const name = baseName(path)
@@ -104,7 +112,9 @@ export const register: Register = (on, options) => {
   }
 
   on('session.start', async ($, e, next) => {
-    await $.command.register({ name: 'secret-guard', description: 'Show which env files and keys secret-guard protects' })
+    await $.command.register({ name: 'secret-guard', description: 'Show which env files and keys secret-guard protects (/secret-guard on or off switches it)', argumentHint: '[on|off|status]' })
+    isOn = storedSwitch(await $.store.get(STORE_KEY).catch(() => undefined), true)
+    if (!isOn) $.ui.status(OFF_STATUS)
     // Command mode matches file names only, so it never reads the values.
     if (mode === 'command') {
       loading = 'ready'
@@ -147,24 +157,36 @@ export const register: Register = (on, options) => {
   // protected key names, what a marker means and how to use a secret without printing it. Names only.
   on('prompt.context', async ($, e, next) => {
     const below = await next(e)
+    if (!isOn) return below
     contextStale = loading === 'pending'
     return { ...below, blocks: [...below.blocks.filter(b => b.name !== BLOCK), { name: BLOCK, text: contextText() }] }
   })
 
-  on('command.run', { command: 'secret-guard' }, async () => {
-    if (mode === 'command') return { text: 'mode command: refuses any call whose command or path names a protected env file, except to load it; values are not read' }
-    if (loading === 'failed') return { text: `could not load ${current ?? 'an env file'} (${loadError}), so value mode refuses every tool call` }
+  on('command.run', { command: 'secret-guard' }, async ($, e) => {
+    const word = switchWord(e.args)
+    if (word === 'on' || word === 'off') {
+      isOn = word === 'on'
+      await $.store.set(STORE_KEY, isOn)
+      $.ui.status(isOn ? (hidden > 0 ? `secret-guard: ${hidden} hidden this session` : undefined) : OFF_STATUS)
+      // The standing note for Claude is added again, or taken away, from the next message on.
+      await $.ui.invalidate('prompt.context')
+      return { text: isOn ? 'on: secrets in tool results are hidden again (/secret-guard off turns it off)' : 'off: secrets are not hidden and Claude gets no note, in every session, until /secret-guard on' }
+    }
+    if (!isOn) return { text: 'off: secrets are not hidden (/secret-guard on turns it on)' }
+    if (mode === 'command') return { text: 'on · mode command: refuses any call whose command or path names a protected env file, except to load it; values are not read' }
+    if (loading === 'failed') return { text: `on · could not load ${current ?? 'an env file'} (${loadError}), so value mode refuses every tool call` }
     // The start hook has not finished: still running, or skipped by the engine (it overran its budget).
-    if (loading === 'pending') return { text: 'has not loaded the env files yet (its start hook did not finish), so value mode refuses every tool call' }
+    if (loading === 'pending') return { text: 'on · has not loaded the env files yet (its start hook did not finish), so value mode refuses every tool call' }
     const counts = `${hidden} values hidden this session${withheld > 0 ? `; ${withheld} results withheld because they could not be checked` : ''}`
-    if (envPaths.length === 0) return { text: `mode value; no env file found above this session; values that look like secrets are still hidden; ${counts}` }
+    if (envPaths.length === 0) return { text: `on · mode value; no env file found above this session; values that look like secrets are still hidden; ${counts}` }
     const names = [...new Set(fileSecrets.map(s => s.name))].join(', ') || 'none'
     const files = envPaths.filter(p => !skipped.some(s => s.file === p)).join(', ') || 'no file'
     const skips = skipped.length > 0 ? `; skipped ${skippedText()}, its values are not protected` : ''
-    return { text: `mode value; protects ${fileSecrets.length} values from ${files}: ${names}${skips}; ${counts}` }
+    return { text: `on · mode value; protects ${fileSecrets.length} values from ${files}: ${names}${skips}; ${counts}` }
   })
 
   on('tool.call', async ($, e, next) => {
+    if (!isOn) return next(e)
     const input = e as unknown as Input
     if (mode === 'command') {
       const named = INPUT_FIELDS.some(field => typeof input[field] === 'string' && namesProtectedFile(input[field] as string, isProtected))
@@ -235,7 +257,7 @@ export const register: Register = (on, options) => {
   // read fresh from disk), a file changed on disk, an @-mentioned file, a settings hook's output. Scrub it too.
   on('prompt.attachment', async ($, e, next) => {
     const below = await next(e)
-    if (mode === 'command' || typeof below.text !== 'string') return below
+    if (!isOn || mode === 'command' || typeof below.text !== 'string') return below
     const found = new Set<string>()
     const text = vault.scrubText(below.text, found)
     if (found.size === 0) return below
@@ -246,7 +268,7 @@ export const register: Register = (on, options) => {
 
   // A message to another agent or session (SendMessage) leaves this conversation: scrub it the same way.
   on('session.send', async ($, e, next) => {
-    if (mode === 'command') return next(e)
+    if (!isOn || mode === 'command') return next(e)
     if (loading !== 'ready') return { isDelivered: false, reason: 'secret-guard has not loaded the env files, so this message was not sent' }
     const found = new Set<string>()
     const text = vault.scrubText(e.text, found)

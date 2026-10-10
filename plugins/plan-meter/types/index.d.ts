@@ -27,7 +27,7 @@ export type ClaudeTask = { id: string; subject: string; status: 'pending' | 'in_
 
 declare module 'claude-code' {
   interface PluginState {
-    // shown: the band switched on or off with /plan-meter on|off this session; null until then (the band option decides).
-    'plan-meter': { meter: PlanMeter | null; tasks: ClaudeTask[]; shown: boolean | null }
+    // enabled: the mod's on/off switch as this session read it from the store, or as /plan-meter on|off set it.
+    'plan-meter': { meter: PlanMeter | null; tasks: ClaudeTask[]; enabled: boolean }
   }
 }

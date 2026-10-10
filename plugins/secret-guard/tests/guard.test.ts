@@ -502,7 +502,7 @@ describe('edge cases', () => {
     expect(out.deny).toBe('secret-guard has not loaded the env files, so this call was not run')
     const reply = await runCommand($, 'secret-guard')
     // The reason is the host's (a stub that throws is skipped, so the kit reports no implementation).
-    expect(reply.text).toMatch(/^could not load C:.ws\/\.env \(.+\), so value mode refuses every tool call$/)
+    expect(reply.text).toMatch(/^on · could not load C:.ws\/\.env \(.+\), so value mode refuses every tool call$/)
     const context: any = await $.prompt.context({ blocks: [] })
     expect(context.blocks[0].text).toContain('every tool call is refused this session')
   })
@@ -518,7 +518,7 @@ describe('edge cases', () => {
     const sent: any = await $.session.send({ to: 'peer', origin: { kind: 'model' }, text: 'hi' })
     expect(sent.isDelivered).toBe(false)
     const reply = await runCommand($, 'secret-guard')
-    expect(reply.text).toBe('has not loaded the env files yet (its start hook did not finish), so value mode refuses every tool call')
+    expect(reply.text).toBe('on · has not loaded the env files yet (its start hook did not finish), so value mode refuses every tool call')
   })
 
   test('a value held in an object key withholds the result', async ($, on) => {
@@ -567,7 +567,7 @@ describe('edge cases', () => {
     await startSession($, on, new Error('EACCES'), () => bashResult('a.txt\n'))
     const out: any = await run($, 'ls')
     expect(out.text).toBe('a.txt\n')
-    expect((await runCommand($, 'secret-guard')).text).toBe('mode command: refuses any call whose command or path names a protected env file, except to load it; values are not read')
+    expect((await runCommand($, 'secret-guard')).text).toBe('on · mode command: refuses any call whose command or path names a protected env file, except to load it; values are not read')
   })
 
   test('a file that cannot be parsed is skipped and named; the other files stay protected', async ($, on) => {
@@ -595,5 +595,40 @@ describe('edge cases', () => {
 
   test('a quoted value that does not close is refused, not guessed', () => {
     expect(() => parseEnv('A_KEY="opens-and-never-closes', NO_RULE)).toThrow()
+  })
+})
+
+describe('the on/off switch', () => {
+  const START_OFF = { enabled: false }
+  const say = ($: any, args: string) => $.command.run({ command: 'secret-guard', args })
+
+  test('starts on; /secret-guard off turns it off for the next session too, with a warning in the status line', async ($, on) => {
+    const seen = await start($, on, () => bashResult(`LLM_API_KEY=${KEY}\n`))
+    expect((await say($, 'status')).text).toContain('on · mode value; protects')
+    expect((await say($, 'off')).text).toBe('off: secrets are not hidden and Claude gets no note, in every session, until /secret-guard on')
+    expect(seen.status.at(-1)).toBe('secret-guard OFF: secrets not hidden')
+    expect((await say($, '')).text).toBe('off: secrets are not hidden (/secret-guard on turns it on)')
+    // A new session reads the switch from the store and says so at once.
+    await ($ as any).session.start({ cwd: 'C:/ws/project', surface: null, isInteractive: false })
+    expect(seen.status.at(-1)).toBe('secret-guard OFF: secrets not hidden')
+    expect((await say($, 'on')).text).toBe('on: secrets in tool results are hidden again (/secret-guard off turns it off)')
+    const out = await run($, './show-config.sh')
+    expect(shown(out)).toContain('‹hidden:')
+  })
+
+  test('off, every hook passes its event on unchanged: nothing hidden or refused, no note for Claude', async ($, on) => {
+    const leak = bashResult(`LLM_API_KEY=${KEY}\n`)
+    const seen = await startSession($, on, ENV, () => leak, START_OFF)
+    expect(await run($, 'cat .env')).toEqual(leak)
+    expect(await run($, 'printenv LLM_API_KEY')).toEqual(leak)
+    expect(seen.calls.map(c => c.command)).toEqual(['cat .env', 'printenv LLM_API_KEY'])
+    const context = await ($ as any).prompt.context({ blocks: [] })
+    expect(context.blocks).toEqual([])
+    expect(await ($ as any).prompt.attachment({ type: 'file', text: `PW=${PW}` } as any)).toEqual({ text: `PW=${PW}` })
+    await ($ as any).session.send({ to: 'teammate', text: `token ${KEY}` } as any)
+    expect(seen.sent).toEqual([`token ${KEY}`])
+    // The only thing it draws while off is the warning.
+    expect(seen.status).toEqual(['secret-guard OFF: secrets not hidden'])
+    expect(seen.log).toEqual([])
   })
 })

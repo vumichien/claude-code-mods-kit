@@ -25,9 +25,11 @@ const PHASE_1 = '# Phase 1: Schema\n\n- [x] tables\n- [x] migration\n'
 const PHASE_2 = '# Phase 2: API\n\n- [x] routes\n- [/] auth middleware\n- [ ] rate limit\n'
 const PHASE_3 = '# Phase 3: UI\n\n**Status:** not started\n\n- [ ] export button\n'
 
-type World = { files: Record<string, string>; mtimes: Record<string, number> }
+// calls: every $ call the plugin made that reads a file, writes, draws or calls the model, by event name.
+type World = { files: Record<string, string>; mtimes: Record<string, number>; calls: string[] }
 
 const world = (): World => ({
+  calls: [],
   files: {
     [`${ROOT}/plans/260101-export/plan.md`]: TABLE_PLAN,
     [`${ROOT}/plans/260101-export/phase-01-schema.md`]: PHASE_1,
@@ -40,20 +42,30 @@ const world = (): World => ({
 })
 
 // Every stub sits beneath the plugin and is registered before the first $ call.
-// show: switch the band on with /plan-meter on, as a person would; false leaves it as the session starts it.
-async function start($: any, on: any, w: World, show = true) {
+// isOn: the switch as an earlier `/plan-meter on` left it in the store; false starts the mod as it ships, off.
+async function start($: any, on: any, w: World, isOn = true) {
   const clock = mock.clock(on, { now: 1_000_000 })
+  mock.store(on, isOn ? { enabled: true } : {})
   const norm = (p: string) => p.replace(/\\/g, '/')
+  for (const name of ['fs.write', 'ui.toast', 'ui.status', 'ui.log', 'model.complete']) on(name, () => {
+    w.calls.push(name)
+    return { value: undefined }
+  })
   on('session.root', () => ({ value: ROOT }))
   on('command.register', ($: any, e: any) => ({ value: { command: e.name } }))
   on('fs.read', ($: any, e: any) => {
+    w.calls.push('fs.read')
     const path = norm(e.path)
     if (!(path in w.files)) throw new Error(`ENOENT ${path}`)
     return { value: w.files[path] }
   })
-  on('fs.exists', ($: any, e: any) => ({ value: norm(e.path) in w.files }))
+  on('fs.exists', ($: any, e: any) => {
+    w.calls.push('fs.exists')
+    return { value: norm(e.path) in w.files }
+  })
   // Lists files and the folders implied by the paths beneath `dir`.
   on('fs.list', ($: any, e: any) => {
+    w.calls.push('fs.list')
     const dir = norm(e.path)
     const seen = new Map<string, any>()
     for (const f of Object.keys(w.files).filter(f => f.startsWith(`${dir}/`))) {
@@ -64,7 +76,10 @@ async function start($: any, on: any, w: World, show = true) {
     }
     return { value: [...seen.values()] }
   })
-  on('ui.open', () => ({ value: { isOpen: true } }))
+  on('ui.open', () => {
+    w.calls.push('ui.open')
+    return { value: { isOpen: true } }
+  })
   on('tool.call', ($: any, e: any) =>
     e.tool === 'TaskCreate' ? { result: { task: { id: String(Object.keys(w.files).length), subject: e.subject } }, text: 'ok' } : { result: {}, text: 'ok' },
   )
@@ -73,7 +88,6 @@ async function start($: any, on: any, w: World, show = true) {
   on('ui.render', ($: any, e: any) => h($.ui.resolve(e).Box, { key: 'engine-band' }))
   await $.session.start({ cwd: ROOT, surface: 'terminal', isInteractive: true })
   await clock.settle()
-  if (show) await runCommand($, 'plan-meter', 'on')
   return clock
 }
 
@@ -227,7 +241,7 @@ describe('plan-meter', () => {
   test('/plan-meter replies with the same line, and /plan-meter <path> switches file', async ($, on) => {
     await start($, on, world())
     expect((await runCommand($, 'plan-meter')).text).toContain('phases 1/3')
-    expect((await runCommand($, 'plan-meter', 'TODO.md')).text).toBe('plan ▸ Todo · steps 1/2 (50%) · next: b')
+    expect((await runCommand($, 'plan-meter', 'TODO.md')).text).toBe('on · plan ▸ Todo · steps 1/2 (50%) · next: b')
     expect(await bandText($)).toBe('plan ▸ Todo · steps 1/2 (50%) · next: b')
   })
 
@@ -264,27 +278,47 @@ describe('plan-meter', () => {
     expect(await bandText($)).toContain("· Claude's tasks 1/2")
   })
 
-  test('the band is hidden until /plan-meter on, and /plan-meter off hides it again; /plan-meter still answers', async ($, on) => {
+  test('the mod starts off; /plan-meter on turns it on, for the next session too; /plan-meter off stops it', async ($, on) => {
     const w = world()
-    await start($, on, w, false)
+    const clock = await start($, on, w, false)
     expect(await bandText($)).toBeUndefined()
-    expect((await runCommand($, 'plan-meter')).text).toContain('phases 1/3')
-    // The plan is still read while hidden, so the band is current when it comes back.
-    w.files[`${ROOT}/plans/260101-export/phase-02-api.md`] = PHASE_2.replace('[/]', '[x]').replace('[ ]', '[x]')
-    await $.tool.call({ tool: 'Edit', file_path: `${ROOT}/plans/260101-export/phase-02-api.md`, old_string: '[ ]', new_string: '[x]' })
-    expect((await runCommand($, 'plan-meter', 'on')).text).toBe('band on (/plan-meter off hides it)')
-    expect(await bandText($)).toContain('steps 5/6')
-    await runCommand($, 'plan-meter', 'off')
+    expect((await runCommand($, 'plan-meter')).text).toBe('off (/plan-meter on turns it on)')
+    expect((await runCommand($, 'plan-meter', 'status')).text).toBe('off (/plan-meter on turns it on)')
+    expect((await runCommand($, 'plan-meter', 'on')).text).toBe('on (/plan-meter off turns it off)')
+    expect(await bandText($)).toContain('phases 1/3')
+    // The switch is kept in the store: a new session starts on.
+    await $.session.start({ cwd: ROOT, surface: 'terminal', isInteractive: true })
+    await clock.settle()
+    expect(await bandText($)).toContain('phases 1/3')
+    expect((await runCommand($, 'plan-meter', 'off')).text).toBe('off (/plan-meter on turns it on)')
     expect(await bandText($)).toBeUndefined()
+    // Off, the re-read timer is stopped: nothing is read any more.
+    w.calls.length = 0
+    await clock.advance(60_000)
+    expect(w.calls).toEqual([])
   })
 
-  test('the band option shows it from the start', { options: { band: 'on' } }, async ($, on) => {
-    await start($, on, world(), false)
-    expect(await bandText($)).toContain('phases 1/3')
+  test('off, every hook passes its event on unchanged, and nothing is read, written or drawn', async ($, on) => {
+    const w = world()
+    const clock = await start($, on, w, false)
+    const edit = await $.tool.call({ tool: 'Edit', file_path: `${ROOT}/plans/260101-export/plan.md`, old_string: '[ ]', new_string: '[x]' })
+    expect(edit).toEqual({ result: {}, text: 'ok' })
+    const todos = await $.tool.call({ tool: 'TodoWrite', todos: [{ content: 'a', status: 'completed', activeForm: 'A' }] })
+    expect(todos).toEqual({ result: {}, text: 'ok' })
+    expect(await bandText($)).toBeUndefined()
+    await clock.advance(60_000)
+    expect((await runCommand($, 'plan-meter')).text).toBe('off (/plan-meter on turns it on)')
+    expect(w.calls).toEqual([])
+  })
+
+  test('band off: the mod is on but draws no band, and /plan-meter still answers', { options: { band: 'off' } }, async ($, on) => {
+    await start($, on, world())
+    expect(await bandText($)).toBeUndefined()
+    expect((await runCommand($, 'plan-meter')).text).toContain('phases 1/3')
   })
 
   test('no plan and no task list: no band at all', async ($, on) => {
-    await start($, on, { files: {}, mtimes: {} })
+    await start($, on, { files: {}, mtimes: {}, calls: [] })
     expect(await bandText($)).toBeUndefined()
     expect((await runCommand($, 'plan-meter')).text).toContain('no plan found')
   })
