@@ -175,7 +175,7 @@ export const register: Register = (on, options) => {
     // An observer: the compaction's result goes back as it came, whatever happens to the band.
     if (e.agentId === undefined && e.trigger !== 'precompute' && result.skip === undefined) await compacted($, detail).catch(() => undefined)
     return result
-  })
+  }).catch(($, e, next) => next(e))
 
   on('ui.render', { component: 'AbovePrompt' }, async ($, e, next) => {
     const below = await next(e)

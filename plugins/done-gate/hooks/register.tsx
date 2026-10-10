@@ -120,7 +120,7 @@ export const register: Register = (on, options) => {
     } catch {
       return ran
     }
-  })
+  }).catch(($, e, next) => next(e))
 
   on('ui.render', { component: 'AbovePrompt' }, async ($, e, next) => {
     const below = await next(e)
