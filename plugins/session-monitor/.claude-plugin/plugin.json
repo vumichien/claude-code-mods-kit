@@ -1,0 +1,11 @@
+{
+  "name": "session-monitor",
+  "version": "0.1.0",
+  "description": "See your other Claude Code sessions from this one: which are working, which wait for you, which are done, and which share this folder. Each session writes a small heartbeat file; nothing else is shared. Starts off: /session-monitor on turns it on",
+  "author": {
+    "name": "Chien Vu Minh"
+  },
+  "license": "MIT",
+  "homepage": "https://github.com/vumichien/claude-code-mods-kit",
+  "types": "./types/index.d.ts"
+}
