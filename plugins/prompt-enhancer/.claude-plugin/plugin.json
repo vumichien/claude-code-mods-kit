@@ -1,0 +1,11 @@
+{
+  "name": "prompt-enhancer",
+  "version": "0.1.0",
+  "description": "An Enhance button above the prompt: Haiku rewrites your draft to name the skills that fit, the questions Claude should ask first and what done looks like. It never submits; Send does. Starts off: /prompt-enhancer on turns it on",
+  "author": {
+    "name": "Chien Vu Minh"
+  },
+  "license": "MIT",
+  "homepage": "https://github.com/vumichien/claude-code-mods-kit",
+  "types": "./types/index.d.ts"
+}
